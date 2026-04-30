@@ -29,19 +29,22 @@ export default function LoginPage() {
         router.push('/dashboard')
         router.refresh()
       } else {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: { emailRedirectTo: `${window.location.origin}/api/auth/callback` },
         })
+        console.error('Supabase signUp response:', JSON.stringify({ data, error }, null, 2))
         if (error) throw error
         setError('Check your email to confirm your account.')
       }
-    } catch {
+    } catch (err: unknown) {
+      console.error('Signup error full object:', JSON.stringify(err, null, 2))
       if (mode === 'signin') {
         setError("We didn't recognize those credentials — double-check your email and password and try again")
       } else {
-        setError("We hit a small snag creating your account — please try again or contact support")
+        const e = err as Record<string, unknown>
+        setError(String(e?.message || e?.error_description || JSON.stringify(err) || 'Unknown error'))
       }
     } finally {
       setLoading(false)
