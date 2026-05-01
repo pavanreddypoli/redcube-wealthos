@@ -105,10 +105,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Create new auth user
+    const normalizedEmail = email.toLowerCase().trim()
+    console.log('Signup received - email:', normalizedEmail, 'password length:', password?.length, 'first char:', password?.[0])
+
     const supabase = anonClient()
     const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
+      email:    normalizedEmail,
+      password, // passed exactly as received — never trim or transform
       options: {
         emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/api/auth/callback`,
         data: { full_name },
@@ -163,7 +166,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Email confirmation is OFF — attempt auto signin
-    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password })
     console.log('Auto signin after signup:', signInData?.user?.id, signInError?.message)
 
     return NextResponse.json({
