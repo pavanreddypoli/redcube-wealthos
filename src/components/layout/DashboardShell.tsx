@@ -33,6 +33,11 @@ interface Props {
 export function DashboardShell({ children, userEmail, userName, advisorType }: Props) {
   const pathname = usePathname()
 
+  async function handleSignOut() {
+    await signOut()
+    window.location.href = '/'
+  }
+
   const displayName = userName ?? userEmail?.split('@')[0] ?? 'Advisor'
   const initials = userName
     ? userName.trim().split(/\s+/).map(n => n[0] ?? '').join('').toUpperCase().slice(0, 2)
@@ -103,15 +108,13 @@ export function DashboardShell({ children, userEmail, userName, advisorType }: P
               )}
             </div>
           </div>
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
-            >
-              <LogOut className="w-4 h-4 flex-shrink-0" />
-              Sign out
-            </button>
-          </form>
+          <button
+            onClick={handleSignOut}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+          >
+            <LogOut className="w-4 h-4 flex-shrink-0" />
+            Sign out
+          </button>
         </div>
       </aside>
 

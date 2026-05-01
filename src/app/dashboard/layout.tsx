@@ -13,10 +13,12 @@ export default async function DashboardLayout({
   const supabase = await createClient()
   const { data: { user }, error } = await supabase.auth.getUser()
 
-  console.log('Dashboard layout cookies:',
-    (await cookies()).getAll().map(c => c.name))
-  console.log('Dashboard layout user:', user?.id)
-  console.log('Dashboard layout user error:', error?.message)
+  console.log('Dashboard layout - user id:', user?.id)
+  console.log('Dashboard layout - error:', error?.message)
+  console.log('Dashboard layout - cookies count:',
+    (await cookies()).getAll().length)
+  console.log('Dashboard layout - cookie names:',
+    (await cookies()).getAll().map(c => c.name).join(', '))
 
   if (!user) redirect('/auth/login')
 

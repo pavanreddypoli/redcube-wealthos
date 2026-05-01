@@ -1,6 +1,5 @@
 'use client'
-import { useState } from 'react'
-import { useFormStatus } from 'react-dom'
+import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -50,22 +49,6 @@ function SubmitButton({ loading, children }: { loading: boolean; children: React
       {loading
         ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Working…</>
         : children
-      }
-    </button>
-  )
-}
-
-function SignInSubmitButton() {
-  const { pending } = useFormStatus()
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="w-full py-3 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white font-semibold text-sm rounded-xl transition-colors flex items-center justify-center gap-2"
-    >
-      {pending
-        ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Signing in…</>
-        : <>Sign in <ArrowRight className="w-4 h-4" /></>
       }
     </button>
   )
@@ -159,7 +142,7 @@ function Landing({ onSignIn, onSignUp }: { onSignIn: () => void; onSignUp: () =>
   )
 }
 
-// ── MODE 2: Sign In — uses server action form, no client-side state needed ────
+// ── MODE 2: Sign In ───────────────────────────────────────────────────────────
 
 function SignIn({
   onBack,
@@ -172,6 +155,38 @@ function SignIn({
   initialError?: string | null
   redirectTo?: string
 }) {
+  const [isPending, startTransition] = useTransition()
+  const [error, setError] = useState(initialError ?? '')
+
+  function handleSignIn(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setError('')
+    const formData = new FormData(e.currentTarget)
+
+    startTransition(async () => {
+      const result = await signIn(formData)
+
+      if (result?.error) {
+        if (result.error === 'email_not_confirmed') {
+          setError('Please confirm your email before signing in. Check your inbox.')
+        } else if (result.error === 'invalid_credentials') {
+          setError('The email or password you entered is incorrect.')
+        } else if (result.error === 'no_session') {
+          setError('Sign in succeeded but session was not created. Please try again.')
+        } else {
+          setError(result.error)
+        }
+        return
+      }
+
+      if (result?.success) {
+        // Full page navigation after server action confirms cookie is written.
+        // window.location.href forces a fresh HTTP request that includes the new cookie.
+        window.location.href = redirectTo || '/dashboard'
+      }
+    })
+  }
+
   return (
     <div className="w-full max-w-sm">
       <Logo />
@@ -189,21 +204,26 @@ function SignIn({
           </div>
         )}
 
-        {initialError && (
-          <div className="mb-4">
-            <ErrorBox msg={initialError} />
-          </div>
-        )}
-
-        <form action={signIn} className="space-y-4">
-          <input type="hidden" name="redirectTo" value={redirectTo || '/dashboard'} />
+        <form onSubmit={handleSignIn} className="space-y-4">
           <Field label="Email address">
             <TextInput type="email" name="email" autoComplete="email" required placeholder="you@firm.com" />
           </Field>
           <Field label="Password">
             <TextInput type="password" name="password" autoComplete="current-password" required placeholder="••••••••" />
           </Field>
-          <SignInSubmitButton />
+
+          {error && <ErrorBox msg={error} />}
+
+          <button
+            type="submit"
+            disabled={isPending}
+            className="w-full py-3 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white font-semibold text-sm rounded-xl transition-colors flex items-center justify-center gap-2"
+          >
+            {isPending
+              ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Signing in…</>
+              : <>Sign in <ArrowRight className="w-4 h-4" /></>
+            }
+          </button>
         </form>
       </div>
 
