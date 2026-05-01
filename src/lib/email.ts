@@ -11,6 +11,8 @@ export interface PillarScores {
 function getSgMail() {
   const key = process.env.SENDGRID_API_KEY
   if (!key || key === 'placeholder') throw new Error('SENDGRID_API_KEY not configured')
+  console.log('[sendgrid] API key present, length:', key.length)
+  console.log('[sendgrid] From email:', process.env.SENDGRID_FROM_EMAIL ?? 'info@redcubefinancial.com (default)')
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const sgMail = require('@sendgrid/mail')
   sgMail.setApiKey(key)
@@ -176,6 +178,7 @@ export async function sendClientEmail(
 </div>
 </body></html>`
 
+  console.log('[sendgrid] sending client email to:', clientEmail)
   await sgMail.send({
     from: from(),
     to:   clientEmail,
@@ -234,6 +237,7 @@ export async function sendInfoEmail(
 </div>
 </body></html>`
 
+  console.log('[sendgrid] sending info email to:', infoTo)
   await sgMail.send({
     from: from(),
     to:   infoTo,
@@ -376,6 +380,7 @@ export async function sendAdvisorEmail(
 </div>
 </body></html>`
 
+  console.log('[sendgrid] sending advisor email to:', advisorEmail, '| subject:', subject)
   await sgMail.send({
     from: from(),
     to:   advisorEmail,

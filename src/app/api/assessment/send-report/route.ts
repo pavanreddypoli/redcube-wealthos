@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { generateClientPDF, generateAdvisorPDF } from '@/lib/generatePDF'
-import { sendClientEmail, sendInfoEmail, sendAdvisorEmail } from '@/lib/email'
+import { sendClientEmail, sendAdvisorEmail } from '@/lib/email'
 import type { ScoreResults } from '@/lib/scoring'
 
 function adminClient() {
@@ -33,9 +33,10 @@ function topGaps(sr: ScoreResults | null): string[] {
 export async function POST(req: NextRequest) {
   try {
     const { assessmentId } = await req.json() as { assessmentId: string }
-    console.log('[send-report] called for assessment:', assessmentId)
-    console.log('[send-report] SendGrid key present:', !!process.env.SENDGRID_API_KEY)
-    console.log('[send-report] From email:', process.env.SENDGRID_FROM_EMAIL)
+    console.log('[send-report] 1. called for assessment:', assessmentId)
+    console.log('[send-report] SENDGRID_API_KEY present:', !!process.env.SENDGRID_API_KEY)
+    console.log('[send-report] SENDGRID_FROM_EMAIL:', process.env.SENDGRID_FROM_EMAIL)
+    console.log('[send-report] COMPANY_EMAIL:', process.env.COMPANY_EMAIL)
 
     if (!assessmentId) {
       return NextResponse.json({ error: 'assessmentId required' }, { status: 400 })
@@ -50,11 +51,11 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (error || !data) {
-      console.error('[send-report] assessment not found:', error)
+      console.error('[send-report] 2. assessment not found:', error)
       return NextResponse.json({ error: 'assessment not found' }, { status: 404 })
     }
 
-    console.log('[send-report] assessment fetched:', data.id, 'email:', data.email)
+    console.log('[send-report] 2. assessment fetched:', data.id)
 
     const sr       = data.score_results as ScoreResults | null
     const answers  = (data.answers ?? {}) as Record<string, unknown>
@@ -62,6 +63,11 @@ export async function POST(req: NextRequest) {
     const email    = (data.email as string | null) ?? (answers.email as string | null) ?? null
     const pillars  = computePillars(sr)
     const gaps     = topGaps(sr)
+    const score    = (data.score as number) ?? 0
+    const risk     = data.risk_profile as string
+
+    console.log('[send-report] 3. client email:', email)
+    console.log('[send-report] 3. selected_advisor_id:', data.selected_advisor_id)
 
     // Fetch selected advisor if present
     let advisorEmail: string | null = null
@@ -74,14 +80,14 @@ export async function POST(req: NextRequest) {
         .single()
       advisorEmail = advisor?.email ?? null
       advisorName  = advisor?.full_name ?? null
-      console.log('[send-report] selected advisor:', advisorName, advisorEmail)
+      console.log('[send-report] 3. selected advisor:', advisorName, advisorEmail)
     }
 
     const assessmentForPDF = {
       clientName:   name,
       clientEmail:  email,
-      riskProfile:  data.risk_profile as string,
-      overallScore: (data.score as number) ?? 0,
+      riskProfile:  risk,
+      overallScore: score,
       scoreResults: sr,
       answers,
       createdAt:    data.created_at as string,
@@ -89,59 +95,110 @@ export async function POST(req: NextRequest) {
       advisorName,
     }
 
-    // Generate both PDFs in parallel
-    console.log('[send-report] generating PDFs...')
-    const [clientPDF, advisorPDF] = await Promise.all([
-      generateClientPDF(assessmentForPDF),
-      generateAdvisorPDF(assessmentForPDF),
-    ])
-    console.log('[send-report] PDFs generated. Client:', clientPDF.length, 'bytes. Advisor:', advisorPDF.length, 'bytes.')
+    // Generate PDFs individually — a PDF failure must not prevent emails
+    console.log('[send-report] 4. generating client PDF...')
+    let clientPDF: Buffer | null = null
+    try {
+      clientPDF = await generateClientPDF(assessmentForPDF)
+      console.log('[send-report] 4. client PDF generated, bytes:', clientPDF.length)
+    } catch (e) {
+      console.error('[send-report] 4. client PDF generation failed:', (e as Error).message)
+    }
+
+    console.log('[send-report] 4. generating advisor PDF...')
+    let advisorPDF: Buffer | null = null
+    try {
+      advisorPDF = await generateAdvisorPDF(assessmentForPDF)
+      console.log('[send-report] 4. advisor PDF generated, bytes:', advisorPDF.length)
+    } catch (e) {
+      console.error('[send-report] 4. advisor PDF generation failed:', (e as Error).message)
+    }
 
     let emailsSent = 0
+    const priorities = [
+      String(answers.topPriority1 ?? ''),
+      String(answers.topPriority2 ?? ''),
+      String(answers.topPriority3 ?? ''),
+    ]
+    const concern = String(answers.biggestConcern ?? '')
 
-    // Info email always fires
+    // EMAIL 2 — Company email (always fires)
+    const companyEmail = process.env.COMPANY_EMAIL || 'info@redcubefinancial.com'
+    console.log('[send-report] 6. sending company email to:', companyEmail)
     try {
-      await sendInfoEmail(name, email, (data.score as number) ?? 0, data.risk_profile as string, pillars, gaps, assessmentId, advisorPDF)
-      console.log('[send-report] info email sent successfully to company inbox')
+      if (!advisorPDF) throw new Error('advisor PDF unavailable')
+      await sendAdvisorEmail(
+        companyEmail,
+        'RedCube Financial Team',
+        name,
+        email,
+        score,
+        risk,
+        pillars,
+        concern,
+        priorities,
+        assessmentId,
+        advisorPDF,
+        {
+          clientPhone:      String(answers.phone ?? ''),
+          grossIncome:      String(answers.grossIncome ?? ''),
+          investableAssets: String(answers.investableAssets ?? ''),
+          topGaps:          gaps,
+          isCompanyNotification: true,
+        },
+      )
+      console.log('[send-report] 7. company email sent successfully')
       emailsSent++
     } catch (e) {
-      console.error('[send-report] info email failed:', (e as Error).message)
+      console.error('[send-report] 7. company email failed:', (e as Error).message)
     }
 
-    // Client email if we have a valid address
+    // EMAIL 1 — Client email (when we have a valid address)
     const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    console.log('[send-report] 5. client email check — value:', email, 'valid:', email ? EMAIL_RE.test(email) : false)
     if (email && EMAIL_RE.test(email)) {
+      console.log('[send-report] 5. sending client email to:', email)
       try {
-        await sendClientEmail(email, name, assessmentId, (data.score as number) ?? 0, data.risk_profile as string, pillars, clientPDF, gaps)
-        console.log('[send-report] client email sent successfully to:', email)
+        if (!clientPDF) throw new Error('client PDF unavailable')
+        await sendClientEmail(email, name, assessmentId, score, risk, pillars, clientPDF, gaps)
+        console.log('[send-report] 5. client email sent successfully')
         emailsSent++
       } catch (e) {
-        console.error('[send-report] client email failed:', (e as Error).message)
+        console.error('[send-report] 5. client email failed:', (e as Error).message)
       }
     } else {
-      console.error('[send-report] No client email found for assessment:', assessmentId, '— raw value:', email)
+      console.error('[send-report] 5. no valid client email — raw value:', email)
     }
 
-    // Advisor email if one was selected
+    // EMAIL 3 — Selected advisor (only if one was chosen)
     if (advisorEmail) {
+      console.log('[send-report] 8. sending advisor email to:', advisorEmail)
       try {
+        if (!advisorPDF) throw new Error('advisor PDF unavailable')
         await sendAdvisorEmail(
           advisorEmail,
           advisorName ?? 'Advisor',
           name,
           email,
-          (data.score as number) ?? 0,
-          data.risk_profile as string,
+          score,
+          risk,
           pillars,
-          String(answers.biggestConcern ?? ''),
-          [String(answers.topPriority1 ?? ''), String(answers.topPriority2 ?? ''), String(answers.topPriority3 ?? '')],
+          concern,
+          priorities,
           assessmentId,
           advisorPDF,
+          {
+            clientPhone:      String(answers.phone ?? ''),
+            grossIncome:      String(answers.grossIncome ?? ''),
+            investableAssets: String(answers.investableAssets ?? ''),
+            topGaps:          gaps,
+            isCompanyNotification: false,
+          },
         )
-        console.log('[send-report] advisor email sent successfully to:', advisorEmail)
+        console.log('[send-report] 8. advisor email sent successfully to:', advisorEmail)
         emailsSent++
       } catch (e) {
-        console.error('[send-report] advisor email failed:', (e as Error).message)
+        console.error('[send-report] 8. advisor email failed:', (e as Error).message)
       }
     }
 
@@ -151,11 +208,11 @@ export async function POST(req: NextRequest) {
       .update({ status: 'emailed' })
       .eq('id', assessmentId)
 
-    console.log('[send-report] done. Emails sent:', emailsSent)
+    console.log('[send-report] 9. done. emails sent:', emailsSent)
     return NextResponse.json({ success: true, emailsSent })
 
   } catch (err) {
-    console.error('[send-report] fatal error:', err)
+    console.error('[send-report] fatal error:', (err as Error).message)
     return NextResponse.json({ error: 'Report send failed' }, { status: 500 })
   }
 }

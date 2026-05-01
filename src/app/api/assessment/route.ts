@@ -257,12 +257,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Fire-and-forget: generate PDF and email advisor (non-blocking)
-    const reportUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/api/assessment/send-report`
-    fetch(reportUrl, {
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://redcube-wealthos.vercel.app'
+    const sendReportUrl = `${appUrl}/api/assessment/send-report`
+    console.log('[assessment] Triggering send-report at:', sendReportUrl, 'for ID:', assessment.id)
+    fetch(sendReportUrl, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ assessmentId: assessment.id }),
-    }).catch(err => console.error('[send-report fire-and-forget]:', err))
+    }).then(r => {
+      console.log('[assessment] send-report response status:', r.status)
+      return r.json()
+    }).then(data => {
+      console.log('[assessment] send-report response:', data)
+    }).catch(err => {
+      console.error('[assessment] send-report fetch failed:', err.message)
+    })
 
     return NextResponse.json({ id: assessment.id, risk_profile, score: score_results.overall_score })
 
