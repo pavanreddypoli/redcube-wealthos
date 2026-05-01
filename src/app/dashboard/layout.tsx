@@ -1,9 +1,8 @@
-export const dynamic = 'force-dynamic'
-
 import { createClient } from '@/lib/supabase/server'
-import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { DashboardShell } from '@/components/layout/DashboardShell'
+
+export const dynamic = 'force-dynamic'
 
 export default async function DashboardLayout({
   children,
@@ -11,17 +10,12 @@ export default async function DashboardLayout({
   children: React.ReactNode
 }) {
   const supabase = await createClient()
-  const { data: { session }, error } = await supabase.auth.getSession()
-  const user = session?.user
 
-  console.log('Dashboard layout - session:', !!session)
-  console.log('Dashboard layout - user id:', user?.id)
-  console.log('Dashboard layout - error:', error?.message)
-  console.log('Dashboard layout - cookie names:',
-    (await cookies()).getAll().map(c => c.name).join(', '))
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
   if (!user) {
-    console.log('Dashboard layout - no user, redirecting to login')
     redirect('/auth/login')
   }
 
@@ -34,8 +28,8 @@ export default async function DashboardLayout({
   return (
     <DashboardShell
       userEmail={user.email}
-      userName={profile?.full_name ?? null}
-      advisorType={profile?.advisor_type ?? null}
+      userName={profile?.full_name}
+      advisorType={profile?.advisor_type}
     >
       {children}
     </DashboardShell>

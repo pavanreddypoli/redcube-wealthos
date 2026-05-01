@@ -1,9 +1,8 @@
 'use client'
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { signIn } from '@/app/auth/actions'
 import { BarChart3, ArrowLeft, ArrowRight, User, Briefcase, Mail } from 'lucide-react'
 
 type Mode = 'landing' | 'signin' | 'signup' | 'confirmation'
@@ -155,36 +154,45 @@ function SignIn({
   initialError?: string | null
   redirectTo?: string
 }) {
-  const [isPending, startTransition] = useTransition()
-  const [error, setError] = useState(initialError ?? '')
+  const router = useRouter()
+  const [email,    setEmail]    = useState('')
+  const [password, setPassword] = useState('')
+  const [loading,  setLoading]  = useState(false)
+  const [error,    setError]    = useState(initialError ?? '')
 
-  function handleSignIn(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSignIn(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError('')
-    const formData = new FormData(e.currentTarget)
+    setLoading(true)
 
-    startTransition(async () => {
-      const result = await signIn(formData)
+    try {
+      const supabase = createClient()
 
-      if (result?.error) {
-        if (result.error === 'email_not_confirmed') {
-          setError('Please confirm your email before signing in. Check your inbox.')
-        } else if (result.error === 'invalid_credentials') {
-          setError('The email or password you entered is incorrect.')
-        } else if (result.error === 'no_session') {
-          setError('Sign in succeeded but session was not created. Please try again.')
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.toLowerCase().trim(),
+        password,
+      })
+
+      if (error) {
+        if (error.message.includes('Email not confirmed')) {
+          setError('Please confirm your email before signing in. Check your inbox and spam folder.')
+        } else if (error.message.includes('Invalid login credentials')) {
+          setError('Incorrect email or password. Please try again.')
         } else {
-          setError(result.error)
+          setError(error.message)
         }
         return
       }
 
-      if (result?.success) {
-        // Full page navigation after server action confirms cookie is written.
-        // window.location.href forces a fresh HTTP request that includes the new cookie.
-        window.location.href = redirectTo || '/dashboard'
+      if (data.session) {
+        router.refresh()
+        router.push(redirectTo || '/dashboard')
       }
-    })
+    } catch {
+      setError('Something went wrong. Please try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -206,24 +214,19 @@ function SignIn({
 
         <form onSubmit={handleSignIn} className="space-y-4">
           <Field label="Email address">
-            <TextInput type="email" name="email" autoComplete="email" required placeholder="you@firm.com" />
+            <TextInput type="email" autoComplete="email" required placeholder="you@firm.com"
+              value={email} onChange={e => setEmail(e.target.value)} />
           </Field>
           <Field label="Password">
-            <TextInput type="password" name="password" autoComplete="current-password" required placeholder="••••••••" />
+            <TextInput type="password" autoComplete="current-password" required placeholder="••••••••"
+              value={password} onChange={e => setPassword(e.target.value)} />
           </Field>
 
           {error && <ErrorBox msg={error} />}
 
-          <button
-            type="submit"
-            disabled={isPending}
-            className="w-full py-3 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white font-semibold text-sm rounded-xl transition-colors flex items-center justify-center gap-2"
-          >
-            {isPending
-              ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Signing in…</>
-              : <>Sign in <ArrowRight className="w-4 h-4" /></>
-            }
-          </button>
+          <SubmitButton loading={loading}>
+            Sign in <ArrowRight className="w-4 h-4" />
+          </SubmitButton>
         </form>
       </div>
 
