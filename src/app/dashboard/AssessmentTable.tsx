@@ -23,6 +23,8 @@ interface PanelState {
   clientName: string
 }
 
+type Tab = 'mine' | 'unassigned' | 'all'
+
 // ── Static lookup maps ────────────────────────────────────────────────────────
 
 const RISK_LABEL: Record<string, string> = {
@@ -234,10 +236,19 @@ function NotesPanel({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function AssessmentTable({ initialAssessments }: { initialAssessments: AssessmentRow[] }) {
+export function AssessmentTable({
+  initialAssessments,
+  currentUserId,
+  currentUserRole,
+}: {
+  initialAssessments: AssessmentRow[]
+  currentUserId: string | null
+  currentUserRole: string | null
+}) {
   const router = useRouter()
 
-  const [search, setSearch] = useState('')
+  const [tab, setTab]             = useState<Tab>('mine')
+  const [search, setSearch]       = useState('')
 
   const [panel, setPanel]         = useState<PanelState | null>(null)
   const [notes, setNotes]         = useState<Note[]>([])
@@ -248,25 +259,58 @@ export function AssessmentTable({ initialAssessments }: { initialAssessments: As
   const [saving, setSaving]       = useState(false)
   const [saveError, setSaveError] = useState('')
 
+  // ── Tab counts ───────────────────────────────────────────────────────────────
+
+  const tabCounts = useMemo(() => ({
+    mine: initialAssessments.filter(a =>
+      a.selected_advisor_id === currentUserId || a.assigned_advisor_id === currentUserId
+    ).length,
+    unassigned: initialAssessments.filter(a =>
+      a.selected_advisor_id === null && a.assigned_advisor_id === null
+    ).length,
+    all: initialAssessments.length,
+  }), [initialAssessments, currentUserId])
+
+  // ── Tab-filtered data ────────────────────────────────────────────────────────
+
+  const tabData = useMemo(() => {
+    switch (tab) {
+      case 'mine':
+        return initialAssessments.filter(a =>
+          a.selected_advisor_id === currentUserId || a.assigned_advisor_id === currentUserId
+        )
+      case 'unassigned':
+        return initialAssessments.filter(a =>
+          a.selected_advisor_id === null && a.assigned_advisor_id === null
+        )
+      default:
+        return initialAssessments
+    }
+  }, [initialAssessments, tab, currentUserId])
+
+  // ── Search filter ────────────────────────────────────────────────────────────
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return initialAssessments
+    if (!search.trim()) return tabData
     const q = search.toLowerCase()
-    return initialAssessments.filter(a =>
+    return tabData.filter(a =>
       (a.full_name ?? '').toLowerCase().includes(q) ||
       (a.email ?? '').toLowerCase().includes(q),
     )
-  }, [initialAssessments, search])
+  }, [tabData, search])
+
+  // ── Stats (from current tab) ─────────────────────────────────────────────────
 
   const stats = useMemo(() => {
-    const total    = initialAssessments.length
+    const total    = tabData.length
     const avgScore = total
-      ? Math.round(initialAssessments.reduce((s, a) => s + (a.score ?? 0), 0) / total)
+      ? Math.round(tabData.reduce((s, a) => s + (a.score ?? 0), 0) / total)
       : 0
-    const highRisk = initialAssessments.filter(a => (a.score ?? 0) < 50).length
+    const highRisk = tabData.filter(a => (a.score ?? 0) < 50).length
     const cutoff   = Date.now() - 7 * 24 * 60 * 60 * 1000
-    const newThisWeek = initialAssessments.filter(a => new Date(a.created_at).getTime() > cutoff).length
+    const newThisWeek = tabData.filter(a => new Date(a.created_at).getTime() > cutoff).length
     return { total, avgScore, highRisk, newThisWeek }
-  }, [initialAssessments])
+  }, [tabData])
 
   const openPanel = useCallback(async (row: AssessmentRow, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -314,6 +358,14 @@ export function AssessmentTable({ initialAssessments }: { initialAssessments: As
     navigator.clipboard.writeText(`${window.location.origin}/assessment`)
   }
 
+  // ── Tab definitions ──────────────────────────────────────────────────────────
+
+  const tabs: { id: Tab; label: string; count: number }[] = [
+    { id: 'mine',       label: 'My Clients',       count: tabCounts.mine },
+    { id: 'unassigned', label: 'Unassigned Leads',  count: tabCounts.unassigned },
+    { id: 'all',        label: 'All',               count: tabCounts.all },
+  ]
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -323,7 +375,7 @@ export function AssessmentTable({ initialAssessments }: { initialAssessments: As
         {/* ── Stats row ─────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
-            label="Total Clients"
+            label={tab === 'mine' ? 'My Clients' : tab === 'unassigned' ? 'Unassigned' : 'Total Clients'}
             value={stats.total}
             sub="all time"
             icon={ClipboardList}
@@ -350,6 +402,28 @@ export function AssessmentTable({ initialAssessments }: { initialAssessments: As
             icon={CalendarDays}
             iconCls="bg-blue-50 text-blue-500"
           />
+        </div>
+
+        {/* ── Tabs ──────────────────────────────────────────────────── */}
+        <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-xl w-fit">
+          {tabs.map(t => (
+            <button
+              key={t.id}
+              onClick={() => { setTab(t.id); setSearch('') }}
+              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                tab === t.id
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {t.label}
+              <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-semibold ${
+                tab === t.id ? 'bg-brand-100 text-brand-700' : 'bg-gray-200 text-gray-500'
+              }`}>
+                {t.count}
+              </span>
+            </button>
+          ))}
         </div>
 
         {/* ── Table / Empty state ────────────────────────────────────── */}
@@ -409,7 +483,12 @@ export function AssessmentTable({ initialAssessments }: { initialAssessments: As
                   {filtered.length === 0 ? (
                     <tr>
                       <td colSpan={9} className="text-center py-12 text-sm text-gray-400">
-                        No clients match &ldquo;{search}&rdquo;
+                        {search
+                          ? `No clients match "${search}"`
+                          : tab === 'mine'
+                            ? 'No clients have selected you yet.'
+                            : 'No unassigned leads right now.'
+                        }
                       </td>
                     </tr>
                   ) : (
@@ -514,7 +593,7 @@ export function AssessmentTable({ initialAssessments }: { initialAssessments: As
             {filtered.length > 0 && (
               <div className="px-5 py-3 border-t border-gray-100 bg-gray-50">
                 <p className="text-xs text-gray-400">
-                  Showing {filtered.length} of {initialAssessments.length} client{initialAssessments.length !== 1 ? 's' : ''}
+                  Showing {filtered.length} of {tabData.length} client{tabData.length !== 1 ? 's' : ''}
                   {search && ` matching "${search}"`}
                 </p>
               </div>
