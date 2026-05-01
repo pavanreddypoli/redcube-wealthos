@@ -1,8 +1,8 @@
 'use client'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { createClient } from '@/lib/supabase/client'
+import { signOut } from '@/app/auth/actions'
 import {
   LayoutDashboard, Users, ClipboardList, BarChart3,
   Settings, LogOut, CreditCard, UserCircle,
@@ -25,14 +25,6 @@ interface Props {
 
 export function DashboardShell({ children, userEmail }: Props) {
   const pathname = usePathname()
-  const router   = useRouter()
-
-  async function signOut() {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    router.push('/')
-  }
-
   const initials = userEmail?.[0]?.toUpperCase() ?? 'A'
 
   return (
@@ -87,13 +79,15 @@ export function DashboardShell({ children, userEmail }: Props) {
               <p className="text-[11px] text-gray-500 truncate leading-none">{userEmail}</p>
             </div>
           )}
-          <button
-            onClick={signOut}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
-          >
-            <LogOut className="w-4 h-4 flex-shrink-0" />
-            Sign out
-          </button>
+          <form action={signOut}>
+            <button
+              type="submit"
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+            >
+              <LogOut className="w-4 h-4 flex-shrink-0" />
+              Sign out
+            </button>
+          </form>
         </div>
       </aside>
 
