@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { BarChart3, ArrowLeft, ArrowRight, User, Briefcase, Mail } from 'lucide-react'
 
@@ -143,6 +144,7 @@ function Landing({ onSignIn, onSignUp }: { onSignIn: () => void; onSignUp: () =>
 // ── MODE 2: Sign In ───────────────────────────────────────────────────────────
 
 function SignIn({ onBack, successMessage }: { onBack: () => void; successMessage?: string }) {
+  const router = useRouter()
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [loading,  setLoading]  = useState(false)
@@ -155,14 +157,24 @@ function SignIn({ onBack, successMessage }: { onBack: () => void; successMessage
     try {
       const supabase = createClient()
       console.log('Attempting signin:', email)
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email:    email.toLowerCase().trim(),
+        password,
+      })
       console.log('Signin result:', {
         userId:    data?.user?.id,
         error:     error?.message,
         errorCode: (error as { code?: string } | null)?.code,
       })
       if (error) throw error
-      window.location.href = '/dashboard'
+
+      // Refresh server state so middleware re-reads the new session cookie,
+      // then navigate. The small delay ensures the cookie is committed first.
+      router.refresh()
+      await new Promise(resolve => setTimeout(resolve, 100))
+      const searchParams = new URLSearchParams(window.location.search)
+      const redirectTo = searchParams.get('redirectTo') || '/dashboard'
+      router.push(redirectTo)
     } catch (err: unknown) {
       const errorMsg = (err as { message?: string })?.message ?? 'Sign in failed'
       if (errorMsg.includes('Email not confirmed')) {
@@ -556,9 +568,16 @@ function ConfirmationPending({ email, onSignIn }: { email: string; onSignIn: () 
 // ── Page shell ────────────────────────────────────────────────────────────────
 
 export default function AuthPage() {
+  const router = useRouter()
   const [mode,              setMode]              = useState<Mode>('landing')
   const [confirmationEmail, setConfirmationEmail] = useState('')
   const [successMessage,    setSuccessMessage]    = useState('')
+
+  async function handleAutoSignedIn() {
+    router.refresh()
+    await new Promise(resolve => setTimeout(resolve, 100))
+    router.push('/pricing?newAdvisor=true')
+  }
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center px-4 py-12">
@@ -575,7 +594,7 @@ export default function AuthPage() {
         <AdvisorSignup
           onBack={() => setMode('landing')}
           onConfirmationRequired={(email) => { setConfirmationEmail(email); setMode('confirmation') }}
-          onAutoSignedIn={() => { window.location.href = '/pricing?newAdvisor=true' }}
+          onAutoSignedIn={handleAutoSignedIn}
           onUpgraded={(msg) => { setSuccessMessage(msg); setMode('signin') }}
           onSwitchToSignIn={() => setMode('signin')}
         />

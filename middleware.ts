@@ -1,38 +1,38 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const PROTECTED = ['/dashboard', '/results']
+const PROTECTED  = ['/dashboard', '/results']
 const AUTH_PAGES = ['/auth/login']
 
 export async function middleware(request: NextRequest) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-  if (!supabaseUrl || !supabaseKey) {
-    console.error('[middleware] Supabase env vars missing — skipping auth check')
-    return NextResponse.next()
-  }
-
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
-    supabaseUrl,
-    supabaseKey,
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() { return request.cookies.getAll() },
+        getAll() {
+          return request.cookies.getAll()
+        },
         setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value))
+            request.cookies.set(name, value)
+          )
           supabaseResponse = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options as Parameters<typeof supabaseResponse.cookies.set>[2]))
+            supabaseResponse.cookies.set(name, value, options as Parameters<typeof supabaseResponse.cookies.set>[2])
+          )
         },
       },
     }
   )
 
+  // IMPORTANT: Do not add any logic between createServerClient and
+  // supabase.auth.getUser(). A simple mistake could make it very hard to
+  // debug issues with users being randomly logged out.
   const { data: { user } } = await supabase.auth.getUser()
+
   const { pathname } = request.nextUrl
 
   const isProtected = PROTECTED.some(p => pathname.startsWith(p))
@@ -51,9 +51,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // IMPORTANT: Return supabaseResponse as-is so refreshed session cookies are forwarded.
   return supabaseResponse
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|ico|css|js)$).*)'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 }
