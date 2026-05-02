@@ -240,13 +240,16 @@ export function AssessmentTable({
   initialAssessments,
   currentUserId,
   currentUserRole,
+  upgraded = false,
 }: {
   initialAssessments: AssessmentRow[]
   currentUserId: string | null
   currentUserRole: string | null
+  upgraded?: boolean
 }) {
   const router = useRouter()
 
+  const [showUpgradeBanner, setShowUpgradeBanner] = useState(upgraded)
   const [tab, setTab]             = useState<Tab>('mine')
   const [search, setSearch]       = useState('')
 
@@ -371,6 +374,28 @@ export function AssessmentTable({
   return (
     <>
       <div className="p-6 space-y-5">
+
+        {/* ── Upgrade success banner ────────────────────────────────── */}
+        {showUpgradeBanner && (
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🎉</span>
+              <div>
+                <p className="text-sm font-semibold text-green-800">Welcome to RedCube WealthOS!</p>
+                <p className="text-xs text-green-600 mt-0.5">Your plan is now active. Start receiving clients today.</p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setShowUpgradeBanner(false)
+                window.history.replaceState({}, '', '/dashboard')
+              }}
+              className="text-green-600 hover:text-green-800 text-lg leading-none flex-shrink-0"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* ── Stats row ─────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

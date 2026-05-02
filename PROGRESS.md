@@ -1,8 +1,12 @@
 # RedCube WealthOS — Build Progress
 
-## Last updated: May 1, 2026
+## Last updated: May 1, 2026 (session 2)
 
-## What is built and working:
+## What is built and working (latest additions at top):
+- Company email multi-recipient: sends to COMPANY_EMAIL + COMPANY_BACKUP_EMAIL, survives SpamCop RBL
+- Stripe webhook fully implemented: checkout.session.completed, subscription.updated/deleted, invoice.payment_failed
+- Plan activation on checkout: profiles.plan + stripe_customer_id/subscription_id updated via webhook
+- Upgrade success banner on /dashboard?upgraded=true after Stripe checkout
 - Next.js 14 app with App Router deployed on Vercel
 - Supabase database with migrations 001-007 (run 006, 007 in Supabase)
 - Authentication: signup, signin, signout using @supabase/ssr@0.10.2
@@ -30,13 +34,25 @@
 - [ ] Test full assessment → summary → email flow end to end on production
 - [ ] Verify PDF emails arrive at client and advisor emails
 - [ ] Verify advisor dropdown shows registered advisors
-- [ ] Stripe webhook handling and plan activation
+- [ ] Add COMPANY_BACKUP_EMAIL in Vercel env variables (Gmail backup address)
+- [ ] Register Stripe webhook endpoint in Stripe Dashboard (see instructions below)
+- [ ] Add STRIPE_WEBHOOK_SECRET to Vercel env variables after Stripe webhook creation
 - [ ] Full advisor dashboard with real client data
 - [ ] Billing portal page (/settings/billing)
 - [ ] Run migration 006 and 007 in Supabase if not done
 - [ ] White-label branding for Enterprise plan
 - [ ] Password reset flow
 - [ ] Mobile testing on real devices
+
+## Stripe webhook setup (required for plan activation):
+Go to stripe.com → Developers → Webhooks → Add endpoint
+Endpoint URL: https://redcube-wealthos.vercel.app/api/stripe/webhook
+Events to listen for:
+- checkout.session.completed
+- customer.subscription.updated
+- customer.subscription.deleted
+- invoice.payment_failed
+After adding, copy Signing Secret → add to Vercel as STRIPE_WEBHOOK_SECRET=whsec_...
 
 ## Key environment variables needed in Vercel:
 - NEXT_PUBLIC_SUPABASE_URL
@@ -48,7 +64,8 @@
 - COMPANY_EMAIL = info@redcubefinancial.com
 - STRIPE_SECRET_KEY
 - NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
-- STRIPE_WEBHOOK_SECRET
+- STRIPE_WEBHOOK_SECRET (from Stripe webhook signing secret)
+- COMPANY_BACKUP_EMAIL (Gmail backup, e.g. yourname@gmail.com)
 
 ## GitHub repo:
 https://github.com/pavanreddypoli/redcube-wealthos

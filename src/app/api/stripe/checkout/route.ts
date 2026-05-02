@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     line_items: [{ price: planConfig.priceId, quantity: 1 }],
-    subscription_data: { trial_period_days: 14 },
+    subscription_data: { trial_period_days: 14, metadata: { userId: user.id, plan } },
     customer_email: user.email,
     success_url: `${appUrl}/dashboard?upgraded=true`,
     cancel_url: `${appUrl}/settings/billing`,

@@ -38,11 +38,17 @@ function computePillars(sr: ScoreResults | null) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: { upgraded?: string }
+}) {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth/login')
+
+  const upgraded = searchParams.upgraded === 'true'
 
   const { data: profile } = await supabase
     .from('profiles')
@@ -124,6 +130,7 @@ export default async function DashboardPage() {
         initialAssessments={rows}
         currentUserId={user.id}
         currentUserRole={profile?.advisor_type ?? null}
+        upgraded={upgraded}
       />
     </>
   )

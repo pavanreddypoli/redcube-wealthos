@@ -122,35 +122,42 @@ export async function POST(req: NextRequest) {
     ]
     const concern = String(answers.biggestConcern ?? '')
 
-    // EMAIL 2 — Company email (always fires)
-    const companyEmail = process.env.COMPANY_EMAIL || 'info@redcubefinancial.com'
-    console.log('[send-report] 6. sending company email to:', companyEmail)
-    try {
-      if (!advisorPDF) throw new Error('advisor PDF unavailable')
-      await sendAdvisorEmail(
-        companyEmail,
-        'RedCube Financial Team',
-        name,
-        email,
-        score,
-        risk,
-        pillars,
-        concern,
-        priorities,
-        assessmentId,
-        advisorPDF,
-        {
-          clientPhone:      String(answers.phone ?? ''),
-          grossIncome:      String(answers.grossIncome ?? ''),
-          investableAssets: String(answers.investableAssets ?? ''),
-          topGaps:          gaps,
-          isCompanyNotification: true,
-        },
-      )
-      console.log('[send-report] 7. company email sent successfully')
-      emailsSent++
-    } catch (e) {
-      console.error('[send-report] 7. company email failed:', (e as Error).message)
+    // EMAIL 2 — Company notification (multi-recipient to survive RBL blocks)
+    const EMAIL_VALID = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    const companyEmails = [
+      process.env.COMPANY_EMAIL || 'info@redcubefinancial.com',
+      process.env.COMPANY_BACKUP_EMAIL,
+    ].filter((e): e is string => !!e && EMAIL_VALID.test(e))
+
+    for (const recipient of companyEmails) {
+      console.log('[send-report] 6. sending company email to:', recipient)
+      try {
+        if (!advisorPDF) throw new Error('advisor PDF unavailable')
+        await sendAdvisorEmail(
+          recipient,
+          'RedCube Financial Team',
+          name,
+          email,
+          score,
+          risk,
+          pillars,
+          concern,
+          priorities,
+          assessmentId,
+          advisorPDF,
+          {
+            clientPhone:      String(answers.phone ?? ''),
+            grossIncome:      String(answers.grossIncome ?? ''),
+            investableAssets: String(answers.investableAssets ?? ''),
+            topGaps:          gaps,
+            isCompanyNotification: true,
+          },
+        )
+        console.log('[send-report] 7. company email sent to:', recipient)
+        emailsSent++
+      } catch (e) {
+        console.error('[send-report] 7. company email failed for', recipient, ':', (e as Error).message)
+      }
     }
 
     // EMAIL 1 — Client email (when we have a valid address)
