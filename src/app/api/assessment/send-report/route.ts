@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { generateClientPDF, generateAdvisorPDF } from '@/lib/generatePDF'
+import { generateClientPDF, generateAdvisorPDF, generateFormExtractPDF } from '@/lib/generatePDF'
 import { sendClientEmail, sendAdvisorEmail } from '@/lib/email'
 import type { ScoreResults } from '@/lib/scoring'
 
@@ -114,6 +114,15 @@ export async function POST(req: NextRequest) {
       console.error('[send-report] 4. advisor PDF generation failed:', (e as Error).message)
     }
 
+    console.log('[send-report] 4. generating form extract PDF...')
+    let extractPDF: Buffer | null = null
+    try {
+      extractPDF = await generateFormExtractPDF(assessmentForPDF)
+      console.log('[send-report] 4. form extract PDF generated, bytes:', extractPDF.length)
+    } catch (e) {
+      console.error('[send-report] 4. form extract PDF generation failed:', (e as Error).message)
+    }
+
     let emailsSent = 0
     const priorities = [
       String(answers.topPriority1 ?? ''),
@@ -151,6 +160,7 @@ export async function POST(req: NextRequest) {
             investableAssets: String(answers.investableAssets ?? ''),
             topGaps:          gaps,
             isCompanyNotification: true,
+            formExtractPDF:   extractPDF,
           },
         )
         console.log('[send-report] 7. company email sent to:', recipient)
@@ -200,6 +210,7 @@ export async function POST(req: NextRequest) {
             investableAssets: String(answers.investableAssets ?? ''),
             topGaps:          gaps,
             isCompanyNotification: false,
+            formExtractPDF:   extractPDF,
           },
         )
         console.log('[send-report] 8. advisor email sent successfully to:', advisorEmail)

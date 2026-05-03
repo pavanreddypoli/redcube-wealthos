@@ -1123,3 +1123,327 @@ export async function generateAdvisorPDF(assessment: AssessmentForPDF): Promise<
 export async function generateAssessmentPDF(assessment: AssessmentForPDF): Promise<Buffer> {
   return generateAdvisorPDF(assessment)
 }
+
+// ── Form extract helpers (exported for view page) ─────────────────────────────
+
+export function formatRaw(value: string): string {
+  const map: Record<string, string> = {
+    'yes': 'Yes', 'no': 'No', 'unsure': 'Not sure',
+    'employer': 'Through employer', 'marketplace': 'ACA Marketplace',
+    'medicare': 'Medicare', 'none': 'None',
+    'single': 'Single', 'married': 'Married', 'divorced': 'Divorced',
+    'widowed': 'Widowed', 'partnered': 'Domestic Partner',
+    'employed': 'Employed (W-2)', 'self_employed': 'Self-Employed',
+    'business_owner': 'Business Owner', 'retired': 'Retired',
+    'unemployed': 'Not Currently Employed',
+    'conservative': 'Conservative', 'moderate': 'Moderate',
+    'moderately_aggressive': 'Moderately Aggressive',
+    'aggressive': 'Aggressive', 'very_aggressive': 'Very Aggressive',
+    'own': 'Own outright', 'mortgage': 'Own with mortgage', 'rent': 'Renting',
+    'fixed_30': '30-year Fixed', 'fixed_15': '15-year Fixed',
+    'arm': 'Adjustable Rate (ARM)',
+    'mfj': 'Married Filing Jointly', 'mfs': 'Married Filing Separately',
+    'hoh': 'Head of Household',
+    'yes_rental': 'Yes — rental property', 'yes_vacation': 'Yes — vacation home',
+    'within_1yr': 'Within the last year', '1_3yr': '1-3 years ago',
+    '3_5yr': '3-5 years ago', '5yr+': 'More than 5 years ago',
+    'never': 'Never / No plan',
+    'asap': 'As soon as possible', '1month': 'Within 1 month',
+    '3months': '1-3 months', '6months': '3-6 months',
+    'exploring': 'Just exploring',
+    'term': 'Term Life', 'whole': 'Whole Life',
+    'universal': 'Universal Life', 'group': 'Group / Employer',
+    'self': 'Self-file', 'informal': 'Informally',
+    'beginner': 'Beginner', 'some': 'Some experience',
+    'experienced': 'Experienced', 'professional': 'Professional level',
+    'all_cash': 'All cash', 'balanced': '60/40 Balanced',
+    'growth': 'Mostly equities', 'all_equities': 'All equities',
+    'income': 'Income generation', 'preservation': 'Capital preservation',
+    'previously': 'Previously had one', 'na': 'Not applicable',
+    '401k': '401(k)', 'roth401k': 'Roth 401(k)',
+    'ira': 'Traditional IRA', 'roth_ira': 'Roth IRA',
+    'sep_ira': 'SEP IRA', 'pension': 'Pension', '403b': '403(b)',
+    'outdated': 'Yes, but outdated',
+    'retirement': 'Retirement planning', 'debt': 'Eliminating debt',
+    'savings': 'Building savings', 'insurance': 'Insurance & protection',
+    'estate': 'Estate planning', 'tax': 'Reducing taxes',
+    'investments': 'Growing investments', 'education': 'Education funding',
+    'home': 'Buying a home',
+    'referral': 'Friend/colleague referral', 'google': 'Google search',
+    'linkedin': 'LinkedIn', 'advisor': 'From my advisor',
+    'event': 'Event or conference', 'other': 'Other',
+    '4-6': '4-6 months', '6+': '6+ months',
+    '1-3': '1-3 years', '3-5': '3-5 years',
+    '5-10': '5-10 years', '10-20': '10-20 years', '20+': '20+ years',
+  }
+  return map[value.toLowerCase()] || value
+}
+
+export function formatVal(value: unknown): string {
+  if (value === null || value === undefined || value === '') return 'Not provided'
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (Array.isArray(value)) {
+    if (value.length === 0) return 'None selected'
+    return value.map(v => formatRaw(String(v))).join(', ')
+  }
+  return formatRaw(String(value))
+}
+
+export function formatMoney(value: unknown): string {
+  if (!value || value === '') return 'Not provided'
+  const num = parseFloat(String(value).replace(/[^0-9.]/g, ''))
+  if (isNaN(num)) return 'Not provided'
+  return '$' + num.toLocaleString('en-US', { maximumFractionDigits: 0 })
+}
+
+// ── generateFormExtractPDF — raw form data extract for advisor ─────────────────
+
+export async function generateFormExtractPDF(assessment: AssessmentForPDF): Promise<Buffer> {
+  const { jsPDF }  = await import('jspdf')
+  const autoTable  = (await import('jspdf-autotable')).default
+
+  const doc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const W    = doc.internal.pageSize.getWidth()
+  const H    = doc.internal.pageSize.getHeight()
+  const NAVY: [number, number, number] = [30,  58,  138]
+  const DARK: [number, number, number] = [15,  23,   42]
+  const GRAY: [number, number, number] = [100, 116, 139]
+  const LGRAY:[number, number, number] = [229, 231, 235]
+
+  const a    = assessment.answers
+  const date = new Date(assessment.createdAt).toLocaleDateString('en-US', {
+    year: 'numeric', month: 'long', day: 'numeric',
+  })
+
+  function renderFooter() {
+    const pg = doc.getNumberOfPages()
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.5)
+    doc.setTextColor(...GRAY)
+    doc.text('WealthPlanrAI — Client Assessment Data Extract — Confidential', 14, H - 8)
+    doc.text(`Page ${pg}`, W - 14, H - 8, { align: 'right' })
+  }
+
+  function newPage() { doc.addPage(); renderFooter() }
+
+  function suf(v: unknown, s: string): string {
+    const x = formatVal(v)
+    return x === 'Not provided' ? x : `${x}${s}`
+  }
+
+  function moneySuf(v: unknown, s: string): string {
+    const m = formatMoney(v)
+    return m === 'Not provided' ? m : `${m}${s}`
+  }
+
+  // ── PAGE 1: Cover ────────────────────────────────────────────────────────────
+
+  doc.setFillColor(...NAVY)
+  doc.rect(0, 0, W, 42, 'F')
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9)
+  doc.setTextColor(147, 197, 253)
+  doc.text('WEALTHPLANRAI', 14, 16)
+
+  doc.setFontSize(17)
+  doc.setTextColor(255, 255, 255)
+  doc.text('Client Assessment Data Extract', 14, 30)
+
+  doc.setFont('helvetica', 'italic')
+  doc.setFontSize(8.5)
+  doc.setTextColor(191, 219, 254)
+  doc.text('Confidential — For Licensed Advisor Use Only', 14, 39)
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(20)
+  doc.setTextColor(...DARK)
+  doc.text(assessment.clientName, 14, 62)
+
+  autoTable(doc, {
+    startY: 68,
+    body: [
+      ['Email',          assessment.clientEmail ?? 'Not provided'],
+      ['Phone',          formatVal(a.phone)],
+      ['Date Submitted', date],
+      ['Assessment ID',  assessment.assessmentId ?? 'N/A'],
+    ] as [string, string][],
+    theme: 'plain',
+    styles: { fontSize: 10, cellPadding: 3 },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 50, textColor: GRAY },
+      1: { textColor: DARK },
+    },
+    margin: { left: 14, right: 14 },
+  })
+
+  doc.setDrawColor(...NAVY)
+  doc.setLineWidth(0.8)
+  doc.line(14, 108, W - 14, 108)
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(8)
+  doc.setTextColor(...NAVY)
+  doc.text('CONFIDENTIAL — FOR LICENSED ADVISOR USE ONLY', W / 2, 115, { align: 'center' })
+
+  renderFooter()
+
+  // ── SECTIONS (one per page) ───────────────────────────────────────────────────
+
+  const sections: { title: string; rows: [string, string][] }[] = [
+    {
+      title: 'SECTION 1 — PERSONAL INFORMATION',
+      rows: [
+        ['First Name',        formatVal(a.firstName)],
+        ['Last Name',         formatVal(a.lastName)],
+        ['Email',             formatVal(a.email)],
+        ['Phone',             formatVal(a.phone)],
+        ['Date of Birth',     formatVal(a.dob)],
+        ['State',             formatVal(a.state)],
+        ['Marital Status',    formatVal(a.maritalStatus)],
+        ['Dependents',        formatVal(a.dependents)],
+        ['Employment Status', formatVal(a.employmentStatus)],
+        ['Occupation',        formatVal(a.occupation)],
+      ],
+    },
+    {
+      title: 'SECTION 2 — CASH FLOW',
+      rows: [
+        ['Annual Gross Income',     formatMoney(a.grossIncome)],
+        ['Spouse/Partner Income',   formatMoney(a.spouseIncome)],
+        ['Other Annual Income',     formatMoney(a.otherIncome)],
+        ['Total Monthly Expenses',  formatMoney(a.monthlyExpenses)],
+        ['Monthly Savings',         formatMoney(a.monthlySavings)],
+        ['Emergency Fund Coverage', suf(a.emergencyFundMonths, ' months')],
+        ['Follows a Budget',        formatVal(a.hasbudget)],
+      ],
+    },
+    {
+      title: 'SECTION 3 — PROTECTION & INSURANCE',
+      rows: [
+        ['Life Insurance',           formatVal(a.hasLifeInsurance)],
+        ['Life Insurance Type',      formatVal(a.lifeInsuranceType)],
+        ['Coverage Amount',          formatMoney(a.lifeCoverageAmount)],
+        ['Disability Insurance',     formatVal(a.hasDisabilityInsurance)],
+        ['Health Insurance',         formatVal(a.hasHealthInsurance)],
+        ['Long-Term Care Insurance', formatVal(a.hasLongTermCare)],
+        ['Umbrella Policy',          formatVal(a.hasUmbrella)],
+      ],
+    },
+    {
+      title: 'SECTION 4 — RETIREMENT PLANNING',
+      rows: [
+        ['Target Retirement Age',      formatVal(a.retirementAge)],
+        ['Desired Monthly Income',     formatMoney(a.retirementIncomeGoal)],
+        ['Current Retirement Savings', formatMoney(a.currentRetirementSavings)],
+        ['Monthly Contributions',      formatMoney(a.monthlyRetirementContrib)],
+        ['Retirement Accounts',        formatVal(a.retirementAccounts)],
+        ['Has Pension',                formatVal(a.hasPension)],
+        ['Social Security Estimate',   moneySuf(a.socialSecurityEstimate, '/mo')],
+      ],
+    },
+    {
+      title: 'SECTION 5 — INVESTMENTS',
+      rows: [
+        ['Total Investable Assets', formatMoney(a.investableAssets)],
+        ['Investment Horizon',      formatVal(a.investmentHorizon)],
+        ['Risk Tolerance',          formatVal(a.riskTolerance)],
+        ['Investment Experience',   formatVal(a.investmentExperience)],
+        ['Current Allocation',      formatVal(a.currentAllocation)],
+        ['Investment Goal',         formatVal(a.investmentGoal)],
+        ['Currently Has Advisor',   formatVal(a.hasAdvisor)],
+      ],
+    },
+    {
+      title: 'SECTION 6 — MORTGAGE & REAL ESTATE',
+      rows: [
+        ['Home Ownership',        formatVal(a.homeOwnership)],
+        ['Estimated Home Value',  formatMoney(a.homeValue)],
+        ['Mortgage Balance',      formatMoney(a.mortgageBalance)],
+        ['Interest Rate',         suf(a.mortgageRate, '%')],
+        ['Mortgage Type',         formatVal(a.mortgageType)],
+        ['Monthly Payment',       formatMoney(a.monthlyMortgage)],
+        ['Years Remaining',       formatVal(a.yearsRemaining)],
+        ['Additional Properties', formatVal(a.hasSecondProperty)],
+      ],
+    },
+    {
+      title: 'SECTION 7 — TAX PLANNING',
+      rows: [
+        ['Filing Status',                   formatVal(a.filingStatus)],
+        ['Federal Tax Bracket',             suf(a.taxBracket, '%')],
+        ['Federal Taxes Last Year',         formatMoney(a.lastYearTaxes)],
+        ['Pays Quarterly Taxes',            formatVal(a.estimatedTaxes)],
+        ['Works with CPA',                  formatVal(a.hasAccountant)],
+        ['Tax-Loss Harvesting Interest',    formatVal(a.taxLossHarvesting)],
+        ['Business/Self-Employment Income', formatVal(a.hasBusinessIncome)],
+        ['Maxing 401(k)',                   formatVal(a.maxing401k)],
+      ],
+    },
+    {
+      title: 'SECTION 8 — ESTATE PLANNING',
+      rows: [
+        ['Has Will',                 formatVal(a.hasWill)],
+        ['Has Living Trust',         formatVal(a.hasTrust)],
+        ['Power of Attorney',        formatVal(a.hasPOA)],
+        ['Healthcare Directive',     formatVal(a.hasHealthcareDirective)],
+        ['Estimated Estate Value',   formatMoney(a.estateValue)],
+        ['Beneficiaries Up to Date', formatVal(a.hasBeneficiaries)],
+        ['Last Estate Plan Review',  formatVal(a.lastReviewedEstate)],
+        ['Has Estate Attorney',      formatVal(a.hasEstateAttorney)],
+      ],
+    },
+    {
+      title: 'SECTION 9 — PRIORITIES & GOALS',
+      rows: [
+        ['Top Priority',              formatVal(a.topPriority1)],
+        ['Second Priority',           formatVal(a.topPriority2)],
+        ['Third Priority',            formatVal(a.topPriority3)],
+        ['Biggest Financial Concern', formatVal(a.biggestConcern)],
+        ['Timeline to Start',         formatVal(a.timelineToStart)],
+        ['How They Heard About Us',   formatVal(a.referralSource)],
+        ['Additional Notes',          formatVal(a.additionalNotes)],
+      ],
+    },
+  ]
+
+  for (const section of sections) {
+    newPage()
+    autoTable(doc, {
+      startY: 20,
+      head: [[{ content: section.title, colSpan: 2, styles: { fillColor: NAVY, textColor: [255, 255, 255] as [number,number,number], fontStyle: 'bold' as const, fontSize: 10, halign: 'left' as const } }]],
+      body: section.rows,
+      theme: 'striped',
+      styles: { fontSize: 9.5, cellPadding: 4 },
+      columnStyles: {
+        0: { fontStyle: 'bold' as const, cellWidth: 64, textColor: GRAY, fontSize: 9 },
+        1: { textColor: DARK },
+      },
+      margin: { left: 14, right: 14 },
+    })
+  }
+
+  // ── LAST PAGE: Disclaimer ─────────────────────────────────────────────────────
+
+  newPage()
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(12)
+  doc.setTextColor(...DARK)
+  doc.text('Important Notice', 14, 28)
+
+  doc.setDrawColor(...LGRAY)
+  doc.setLineWidth(0.5)
+  doc.line(14, 32, W - 14, 32)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9.5)
+  doc.setTextColor(...GRAY)
+  const dlines = doc.splitTextToSize(
+    'This document contains self-reported information provided by the client during the WealthPlanrAI financial assessment. All information has been provided voluntarily and has not been independently verified. This document is for licensed advisor use only. WealthPlanrAI LLC. Confidential.',
+    W - 28,
+  ) as string[]
+  doc.text(dlines, 14, 42)
+
+  return Buffer.from(doc.output('arraybuffer'))
+}

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { generateClientPDF, generateAdvisorPDF } from '@/lib/generatePDF'
+import { generateClientPDF, generateAdvisorPDF, generateFormExtractPDF } from '@/lib/generatePDF'
 import type { ScoreResults } from '@/lib/scoring'
 
 function adminClient() {
@@ -45,14 +45,19 @@ export async function GET(request: NextRequest) {
       assessmentId: data.id as string,
     }
 
-    const pdfBuffer = type === 'advisor'
-      ? await generateAdvisorPDF(assessmentForPDF)
-      : await generateClientPDF(assessmentForPDF)
-
     const safeName = name.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_')
-    const filename = type === 'advisor'
-      ? `${safeName}_Advisor_Report.pdf`
-      : `${safeName}_Financial_Summary.pdf`
+    let pdfBuffer: Buffer
+    let filename: string
+    if (type === 'advisor') {
+      pdfBuffer = await generateAdvisorPDF(assessmentForPDF)
+      filename  = `${safeName}_Advisor_Report.pdf`
+    } else if (type === 'extract') {
+      pdfBuffer = await generateFormExtractPDF(assessmentForPDF)
+      filename  = `${safeName}_Form_Extract.pdf`
+    } else {
+      pdfBuffer = await generateClientPDF(assessmentForPDF)
+      filename  = `${safeName}_Financial_Summary.pdf`
+    }
 
     return new NextResponse(new Uint8Array(pdfBuffer), {
       headers: {

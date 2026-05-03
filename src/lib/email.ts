@@ -167,7 +167,7 @@ export async function sendClientEmail(
 
     <p style="color:#374151;font-size:14px;line-height:1.7;margin-top:22px;">A WealthPlanrAI advisor will be in touch within <strong>1 business day</strong> to walk you through your results and help you build a personalized action plan.</p>
 
-    ${ctaButton(`${appUrl()}/results?id=${assessmentId}`, 'View Your Full Summary Online')}
+    ${ctaButton(`${appUrl()}/summary?id=${assessmentId}`, 'View Your Full Summary Online')}
 
     <div style="border-top:1px solid #e5e7eb;margin-top:24px;padding-top:18px;">
       <p style="margin:0;font-size:13px;color:#374151;font-weight:600;">The WealthPlanrAI Team</p>
@@ -204,6 +204,7 @@ export async function sendInfoEmail(
   topGaps: string[],
   assessmentId: string,
   advisorPDFBuffer: Buffer,
+  formExtractPDF?: Buffer | null,
 ): Promise<void> {
   const sgMail  = getSgMail()
   const date    = dateStr()
@@ -237,18 +238,28 @@ export async function sendInfoEmail(
 </div>
 </body></html>`
 
+  const infoAttachments: object[] = [{
+    content:     advisorPDFBuffer.toString('base64'),
+    filename:    `${safe}_Advisor_Report_${date.replace(/, /g, '_').replace(/ /g, '_')}.pdf`,
+    type:        'application/pdf',
+    disposition: 'attachment',
+  }]
+  if (formExtractPDF) {
+    infoAttachments.push({
+      content:     formExtractPDF.toString('base64'),
+      filename:    `${safe}_Form_Extract.pdf`,
+      type:        'application/pdf',
+      disposition: 'attachment',
+    })
+  }
+
   console.log('[sendgrid] sending info email to:', infoTo)
   await sgMail.send({
     from: from(),
     to:   infoTo,
     subject: `New Assessment — ${clientName} — Score: ${overallScore}/100 — ${date}`,
     html,
-    attachments: [{
-      content:     advisorPDFBuffer.toString('base64'),
-      filename:    `${safe}_Advisor_Report_${date.replace(/, /g, '_').replace(/ /g, '_')}.pdf`,
-      type:        'application/pdf',
-      disposition: 'attachment',
-    }],
+    attachments: infoAttachments,
   })
 }
 
@@ -272,6 +283,7 @@ export async function sendAdvisorEmail(
     investableAssets?: string
     topGaps?: string[]
     isCompanyNotification?: boolean
+    formExtractPDF?: Buffer | null
   },
 ): Promise<void> {
   const sgMail    = getSgMail()
@@ -374,11 +386,26 @@ export async function sendAdvisorEmail(
 
     <p style="color:#374151;font-size:13px;line-height:1.7;margin-top:12px;">The full advisor report with detailed analysis and product recommendations is attached as a PDF.</p>
 
-    ${ctaButton(`${appUrl()}/results?id=${assessmentId}`, 'View Full Assessment')}
+    ${ctaButton(`${appUrl()}/assessment/view?id=${assessmentId}`, 'View Full Assessment')}
   </div>
   ${emailFooter(ADVISOR_DISCLAIMER)}
 </div>
 </body></html>`
+
+  const advisorAttachments: object[] = [{
+    content:     advisorPDFBuffer.toString('base64'),
+    filename:    `${safe}_Advisor_Report_${date.replace(/, /g, '_').replace(/ /g, '_')}.pdf`,
+    type:        'application/pdf',
+    disposition: 'attachment',
+  }]
+  if (opts?.formExtractPDF) {
+    advisorAttachments.push({
+      content:     opts.formExtractPDF.toString('base64'),
+      filename:    `${safe}_Form_Extract.pdf`,
+      type:        'application/pdf',
+      disposition: 'attachment',
+    })
+  }
 
   console.log('[sendgrid] sending advisor email to:', advisorEmail, '| subject:', subject)
   await sgMail.send({
@@ -386,12 +413,7 @@ export async function sendAdvisorEmail(
     to:   advisorEmail,
     subject,
     html,
-    attachments: [{
-      content:     advisorPDFBuffer.toString('base64'),
-      filename:    `${safe}_Advisor_Report_${date.replace(/, /g, '_').replace(/ /g, '_')}.pdf`,
-      type:        'application/pdf',
-      disposition: 'attachment',
-    }],
+    attachments: advisorAttachments,
   })
 }
 
