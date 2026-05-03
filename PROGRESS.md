@@ -1,8 +1,9 @@
 # RedCube WealthOS — Build Progress
 
-## Last updated: May 1, 2026 (session 2)
+## Last updated: May 3, 2026 (session 3)
 
 ## What is built and working (latest additions at top):
+- Full mobile responsiveness: hamburger drawer on dashboard, card view for client table, stacked layouts on all pages
 - Company email multi-recipient: sends to COMPANY_EMAIL + COMPANY_BACKUP_EMAIL, survives SpamCop RBL
 - Stripe webhook fully implemented: checkout.session.completed, subscription.updated/deleted, invoice.payment_failed
 - Plan activation on checkout: profiles.plan + stripe_customer_id/subscription_id updated via webhook
@@ -42,7 +43,7 @@
 - [ ] Run migration 006 and 007 in Supabase if not done
 - [ ] White-label branding for Enterprise plan
 - [ ] Password reset flow
-- [ ] Mobile testing on real devices
+- [x] Mobile responsiveness implemented — test on real devices to verify
 
 ## Stripe webhook setup (required for plan activation):
 Go to stripe.com → Developers → Webhooks → Add endpoint

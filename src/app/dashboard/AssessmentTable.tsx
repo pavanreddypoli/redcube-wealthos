@@ -41,6 +41,13 @@ const RISK_BADGE: Record<string, string> = {
   very_aggressive: 'bg-rose-100 text-rose-700',
 }
 
+const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
+  emailed:   { label: 'Emailed',   cls: 'bg-green-100 text-green-700' },
+  pending:   { label: 'Pending',   cls: 'bg-amber-100 text-amber-700' },
+  reviewed:  { label: 'Reviewed',  cls: 'bg-blue-100 text-blue-700' },
+  closed:    { label: 'Closed',    cls: 'bg-gray-100 text-gray-600' },
+}
+
 const AVATAR_COLORS = [
   'bg-violet-500', 'bg-blue-500', 'bg-emerald-500', 'bg-amber-500',
   'bg-rose-500',   'bg-indigo-500', 'bg-teal-500',  'bg-orange-500',
@@ -82,14 +89,14 @@ function StatCard({
   icon: React.ElementType; iconCls: string
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 flex items-center gap-4">
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${iconCls}`}>
-        <Icon className="w-5 h-5" />
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 sm:px-5 sm:py-4 flex items-center gap-3 sm:gap-4">
+      <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${iconCls}`}>
+        <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
       </div>
       <div className="min-w-0">
-        <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
-        <p className="text-2xl font-bold text-gray-900 leading-tight">{value}</p>
-        {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+        <p className="text-[10px] sm:text-[11px] font-medium text-gray-400 uppercase tracking-wide leading-tight">{label}</p>
+        <p className="text-xl sm:text-2xl font-bold text-gray-900 leading-tight">{value}</p>
+        {sub && <p className="text-[10px] sm:text-xs text-gray-400 mt-0.5">{sub}</p>}
       </div>
     </div>
   )
@@ -141,7 +148,7 @@ function NotesPanel({
   return (
     <>
       <div className="fixed inset-0 bg-slate-900/40 z-40 backdrop-blur-[1px]" onClick={onClose} />
-      <div className="fixed top-0 right-0 h-full w-[380px] bg-white shadow-2xl z-50 flex flex-col">
+      <div className="fixed top-0 right-0 h-full w-full sm:w-[380px] bg-white shadow-2xl z-50 flex flex-col">
 
         <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
           <div>
@@ -398,7 +405,7 @@ export function AssessmentTable({
         )}
 
         {/* ── Stats row ─────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <StatCard
             label={tab === 'mine' ? 'My Clients' : tab === 'unassigned' ? 'Unassigned' : 'Total Clients'}
             value={stats.total}
@@ -430,25 +437,27 @@ export function AssessmentTable({
         </div>
 
         {/* ── Tabs ──────────────────────────────────────────────────── */}
-        <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-xl w-fit">
-          {tabs.map(t => (
-            <button
-              key={t.id}
-              onClick={() => { setTab(t.id); setSearch('') }}
-              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                tab === t.id
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {t.label}
-              <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-semibold ${
-                tab === t.id ? 'bg-brand-100 text-brand-700' : 'bg-gray-200 text-gray-500'
-              }`}>
-                {t.count}
-              </span>
-            </button>
-          ))}
+        <div className="overflow-x-auto -mx-1 px-1">
+          <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-xl w-fit min-w-max">
+            {tabs.map(t => (
+              <button
+                key={t.id}
+                onClick={() => { setTab(t.id); setSearch('') }}
+                className={`flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                  tab === t.id
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {t.label}
+                <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-semibold ${
+                  tab === t.id ? 'bg-brand-100 text-brand-700' : 'bg-gray-200 text-gray-500'
+                }`}>
+                  {t.count}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* ── Table / Empty state ────────────────────────────────────── */}
@@ -493,7 +502,7 @@ export function AssessmentTable({
               </button>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="hidden lg:block overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50">
@@ -613,6 +622,93 @@ export function AssessmentTable({
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* ── Mobile card view ─────────────────────────────────── */}
+            <div className="lg:hidden divide-y divide-gray-100">
+              {filtered.length === 0 ? (
+                <div className="p-6 text-center text-sm text-gray-400">
+                  {search
+                    ? `No clients match "${search}"`
+                    : tab === 'mine'
+                      ? 'No clients have selected you yet.'
+                      : 'No unassigned leads right now.'
+                  }
+                </div>
+              ) : (
+                filtered.map(row => {
+                  const sc = scoreClasses(row.score ?? 0)
+                  const riskLbl = RISK_LABEL[row.risk_profile] ?? row.risk_profile
+                  const flagCount = row.score_results?.risk_flags?.length ?? 0
+                  const initials = getInitials(row.full_name)
+                  const avCls = avatarColor(row.full_name)
+                  const statusCfg = STATUS_CONFIG[row.status ?? ''] ?? { label: row.status ?? '—', cls: 'bg-gray-100 text-gray-500' }
+
+                  return (
+                    <div
+                      key={row.id}
+                      className="p-4 hover:bg-gray-50 active:bg-gray-100 cursor-pointer"
+                      onClick={() => router.push(`/results?id=${row.id}`)}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-10 h-10 rounded-full ${avCls} flex items-center justify-center text-sm font-bold text-white flex-shrink-0`}>
+                            {initials}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-gray-900 text-sm truncate">{row.full_name ?? '—'}</p>
+                            <p className="text-xs text-gray-400 truncate">{row.email ?? ''}</p>
+                          </div>
+                        </div>
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold flex-shrink-0 ${sc.bg} ${sc.text}`}>
+                          {row.score ?? 0}/100
+                        </span>
+                      </div>
+
+                      <div className="mt-2.5 flex flex-wrap gap-1.5">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold ${RISK_BADGE[row.risk_profile] ?? 'bg-gray-100 text-gray-600'}`}>
+                          {riskLbl}
+                        </span>
+                        {row.status && (
+                          <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold ${statusCfg.cls}`}>
+                            {statusCfg.label}
+                          </span>
+                        )}
+                        {flagCount > 0 && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-50 text-red-600">
+                            ⚠ {flagCount} flag{flagCount > 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className="text-xs text-gray-400">{shortDate(row.created_at)}</span>
+                        <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+                          <button
+                            onClick={() => router.push(`/results?id=${row.id}`)}
+                            className="p-2 rounded-lg text-gray-400 hover:text-brand-700 hover:bg-gray-100 transition-colors"
+                            title="View results"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={e => openPanel(row, e)}
+                            className="p-2 rounded-lg text-gray-400 hover:text-brand-700 hover:bg-gray-100 transition-colors relative"
+                            title="Advisor notes"
+                          >
+                            <StickyNote className="w-4 h-4" />
+                            {row.note_count > 0 && (
+                              <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-brand-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
+                                {row.note_count > 9 ? '9+' : row.note_count}
+                              </span>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
             </div>
 
             {filtered.length > 0 && (

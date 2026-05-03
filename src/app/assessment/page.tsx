@@ -658,23 +658,23 @@ export default function AssessmentPage() {
         </>}
 
         {/* Navigation */}
-        <div className="flex items-center justify-between mt-8 pt-6 border-t border-gray-100">
+        <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 mt-8 pt-6 border-t border-gray-100">
           {step>0
             ? <button
-                className="px-5 py-2.5 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
                 onClick={goBack}
               >← Back</button>
-            : <div />
+            : <div className="hidden sm:block" />
           }
-          <div className="flex items-center gap-3.5">
+          <div className="flex items-center justify-between sm:justify-end gap-3.5">
             <span className="text-xs text-gray-400 font-medium">{step+1} / {STEPS.length}</span>
             {step<STEPS.length-1
               ? <button
-                  className="px-6 py-2.5 rounded-lg bg-brand-600 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
+                  className="flex-1 sm:flex-none px-6 py-2.5 rounded-lg bg-brand-600 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
                   onClick={goNext}
                 >Continue →</button>
               : <button
-                  className="px-6 py-2.5 rounded-lg bg-brand-600 text-sm font-semibold text-white transition-colors hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="flex-1 sm:flex-none px-6 py-2.5 rounded-lg bg-brand-600 text-sm font-semibold text-white transition-colors hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed"
                   onClick={submit}
                   disabled={loading}
                 >

@@ -247,7 +247,7 @@ export default async function SummaryPage({
       </header>
 
       {/* Hero gradient */}
-      <div className="bg-[#EFF6FF] border-b border-blue-100 px-6 py-10">
+      <div className="bg-[#EFF6FF] border-b border-blue-100 px-4 sm:px-6 py-7 sm:py-10">
         <div className="max-w-5xl mx-auto text-center">
           <p className="text-brand-600 text-xs font-semibold uppercase tracking-widest mb-3">
             Evaluated against the RedCube Financial Three Pillars
@@ -270,7 +270,7 @@ export default async function SummaryPage({
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {pillarCards.map(p => (
-              <div key={p.key} className={`bg-white rounded-2xl border border-gray-200 shadow-sm border-t-4 ${p.borderAccent} p-6 flex flex-col`}>
+              <div key={p.key} className={`bg-white rounded-2xl border border-gray-200 shadow-sm border-t-4 ${p.borderAccent} p-4 sm:p-6 flex flex-col`}>
                 {/* Icon + Name */}
                 <div className={`w-11 h-11 rounded-xl ${p.bgAccent} flex items-center justify-center mb-4`}>
                   {p.icon}
@@ -311,7 +311,7 @@ export default async function SummaryPage({
         </section>
 
         {/* ── Overall Summary Card ────────────────────────────────────────── */}
-        <section className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl border border-blue-200 p-8">
+        <section className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl border border-blue-200 p-4 sm:p-8">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
             {/* Big score */}
             <div className="flex-shrink-0 text-center sm:text-left">
@@ -377,7 +377,7 @@ export default async function SummaryPage({
         <AdvisorSelector assessmentId={row.id} />
 
         {/* ── CTA Section ─────────────────────────────────────────────────── */}
-        <section className="bg-brand-600 rounded-2xl p-8 text-center">
+        <section className="bg-brand-600 rounded-2xl p-4 sm:p-8 text-center">
           <h2 className="font-heading text-2xl font-bold text-white mb-2">
             Ready to build your personalized financial plan?
           </h2>
