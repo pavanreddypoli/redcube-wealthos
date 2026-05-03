@@ -1,10 +1,14 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
-import { Plus, Tag, Users, DollarSign, TrendingUp, Check, X, ChevronDown, ChevronRight, AlertCircle } from 'lucide-react'
+import { useState } from 'react'
+import { Plus, Tag, Users, DollarSign, Check, X, ChevronDown, ChevronRight } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface Advisor { id: string; full_name: string | null; email: string | null }
+interface Advisor {
+  id: string
+  full_name: string | null
+  email: string | null
+}
 
 interface DiscountCode {
   id: string
@@ -33,6 +37,13 @@ interface CommissionPayment {
   paid_at: string | null
   payment_method: string | null
   payment_reference: string | null
+  notes?: string | null
+  referrer: { full_name: string | null; email: string | null } | null
+  referral: {
+    discount_code: string | null
+    plan: string
+    referred: { full_name: string | null; email: string | null } | null
+  } | null
 }
 
 interface Referral {
@@ -57,86 +68,33 @@ type Tab = 'codes' | 'referrals' | 'commissions'
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const fmt$ = (v: number) => `$${v.toFixed(2)}`
-
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+// ── Props ─────────────────────────────────────────────────────────────────────
+
+interface Props {
+  initialCodes: any[]
+  initialReferrals: any[]
+  initialCommissions: any[]
+  advisors: any[]
+}
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-export function AdminClient() {
+export function AdminClient({ initialCodes, initialReferrals, initialCommissions, advisors }: Props) {
   const [tab, setTab] = useState<Tab>('codes')
-  const [codes, setCodes] = useState<DiscountCode[]>([])
-  const [referrals, setReferrals] = useState<Referral[]>([])
-  const [advisors, setAdvisors] = useState<Advisor[]>([])
-  const [loadingCodes, setLoadingCodes] = useState(true)
-  const [fetchError, setFetchError] = useState('')
-  const [error, setError] = useState('')
-
-  const fetchCodes = useCallback(async () => {
-    try {
-      setLoadingCodes(true)
-      setFetchError('')
-      const res = await fetch('/api/admin/discount-codes', { credentials: 'include' })
-      console.log('[admin] fetch codes status:', res.status)
-      if (res.status === 401) {
-        const body = await res.json().catch(() => ({}))
-        const msg = 'Unauthorized (401) — ADMIN_EMAILS env variable may be missing on Vercel. ' +
-          (body.error ? `Server: ${body.error}` : '')
-        console.error('[admin] fetch codes 401:', msg)
-        setFetchError(msg)
-        return
-      }
-      if (!res.ok) {
-        const text = await res.text()
-        console.error('[admin] fetch codes failed:', res.status, text)
-        setFetchError(`API error ${res.status}: ${text}`)
-        return
-      }
-      const data = await res.json()
-      console.log('[admin] codes loaded:', data?.length)
-      setCodes(Array.isArray(data) ? data : [])
-    } catch (e: any) {
-      console.error('[admin] fetchCodes error:', e.message)
-      setFetchError(`Network error: ${e.message}`)
-    } finally {
-      setLoadingCodes(false)
-    }
-  }, [])
-
-  const fetchReferrals = useCallback(async () => {
-    try {
-      const res = await fetch('/api/admin/referrals', { credentials: 'include' })
-      const data = await res.json()
-      setReferrals(Array.isArray(data) ? data : [])
-    } catch (e: any) {
-      console.error('[admin] fetchReferrals error:', e.message)
-    }
-  }, [])
-
-  const fetchAdvisors = useCallback(async () => {
-    try {
-      const res = await fetch('/api/advisors', { credentials: 'include' })
-      const data = await res.json()
-      setAdvisors(Array.isArray(data) ? data : [])
-    } catch (e: any) {
-      console.error('[admin] fetchAdvisors error:', e.message)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchCodes()
-    fetchReferrals()
-    fetchAdvisors()
-  }, [fetchCodes, fetchReferrals, fetchAdvisors])
-
-  const allCommissions = referrals.flatMap(r => r.commissions ?? [])
-  const pendingCommissions = allCommissions.filter(c => c.status === 'pending')
-  const pendingTotal = pendingCommissions.reduce((s, c) => s + c.commission_amount, 0)
+  const [codes, setCodes] = useState<DiscountCode[]>(initialCodes)
+  const [referrals] = useState<Referral[]>(initialReferrals)
+  const [commissions, setCommissions] = useState<CommissionPayment[]>(initialCommissions)
 
   const now = new Date()
-  const paidThisMonth = allCommissions
+  const pendingTotal = commissions
+    .filter(c => c.status === 'pending')
+    .reduce((s, c) => s + (c.commission_amount || 0), 0)
+  const paidThisMonth = commissions
     .filter(c => c.status === 'paid' && c.period_month === now.getMonth() + 1 && c.period_year === now.getFullYear())
-    .reduce((s, c) => s + c.commission_amount, 0)
-
+    .reduce((s, c) => s + (c.commission_amount || 0), 0)
+  const pendingCount = commissions.filter(c => c.status === 'pending').length
   const activeCodes = codes.filter(c => c.is_active).length
   const activeReferrals = referrals.filter(r => r.status === 'active').length
 
@@ -145,6 +103,18 @@ export function AdminClient() {
     { key: 'referrals',   label: 'Referrals',      icon: <Users className="w-4 h-4" /> },
     { key: 'commissions', label: 'Commissions',    icon: <DollarSign className="w-4 h-4" /> },
   ]
+
+  function handleCodeCreated(newCode: DiscountCode) {
+    setCodes(prev => [newCode, ...prev])
+  }
+
+  function handleCodeToggled(id: string, newActive: boolean) {
+    setCodes(prev => prev.map(c => c.id === id ? { ...c, is_active: newActive } : c))
+  }
+
+  function handleCommissionPaid(id: string, updates: Partial<CommissionPayment>) {
+    setCommissions(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c))
+  }
 
   return (
     <div>
@@ -174,20 +144,13 @@ export function AdminClient() {
       <div className="p-4 sm:p-6">
         <div className="max-w-6xl mx-auto">
 
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 flex items-center gap-2 text-red-700 text-sm">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              {error}
-            </div>
-          )}
-
           {/* Stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             {[
-              { label: 'Pending Commissions', value: fmt$(pendingTotal), icon: <DollarSign className="w-5 h-5 text-amber-500" />, bg: 'bg-amber-50' },
-              { label: 'Paid This Month',     value: fmt$(paidThisMonth), icon: <Check className="w-5 h-5 text-green-500" />,  bg: 'bg-green-50' },
-              { label: 'Active Referrals',    value: String(activeReferrals), icon: <Users className="w-5 h-5 text-brand-500" />, bg: 'bg-blue-50' },
-              { label: 'Active Codes',        value: String(activeCodes), icon: <Tag className="w-5 h-5 text-purple-500" />,    bg: 'bg-purple-50' },
+              { label: 'Pending Commissions', value: fmt$(pendingTotal),      icon: <DollarSign className="w-5 h-5 text-amber-500" />, bg: 'bg-amber-50'  },
+              { label: 'Paid This Month',     value: fmt$(paidThisMonth),     icon: <Check     className="w-5 h-5 text-green-500"  />, bg: 'bg-green-50'  },
+              { label: 'Active Referrals',    value: String(activeReferrals), icon: <Users     className="w-5 h-5 text-brand-500"  />, bg: 'bg-blue-50'   },
+              { label: 'Active Codes',        value: String(activeCodes),     icon: <Tag       className="w-5 h-5 text-purple-500" />, bg: 'bg-purple-50' },
             ].map(stat => (
               <div key={stat.label} className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
                 <div className={`w-9 h-9 ${stat.bg} rounded-xl flex items-center justify-center mb-3`}>
@@ -213,9 +176,9 @@ export function AdminClient() {
               >
                 {t.icon}
                 {t.label}
-                {t.key === 'commissions' && pendingCommissions.length > 0 && (
+                {t.key === 'commissions' && pendingCount > 0 && (
                   <span className="bg-amber-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                    {pendingCommissions.length}
+                    {pendingCount}
                   </span>
                 )}
               </button>
@@ -223,9 +186,9 @@ export function AdminClient() {
           </div>
 
           <>
-            {tab === 'codes'       && <CodesTab codes={codes} advisors={advisors} onRefresh={fetchCodes} loadingCodes={loadingCodes} fetchError={fetchError} />}
+            {tab === 'codes'       && <CodesTab codes={codes} advisors={advisors} onCodeCreated={handleCodeCreated} onCodeToggled={handleCodeToggled} />}
             {tab === 'referrals'   && <ReferralsTab referrals={referrals} />}
-            {tab === 'commissions' && <CommissionsTab referrals={referrals} onRefresh={fetchReferrals} />}
+            {tab === 'commissions' && <CommissionsTab commissions={commissions} onCommissionPaid={handleCommissionPaid} />}
           </>
 
         </div>
@@ -237,13 +200,12 @@ export function AdminClient() {
 // ── TAB 1: Discount Codes ─────────────────────────────────────────────────────
 
 function CodesTab({
-  codes, advisors, onRefresh, loadingCodes, fetchError,
+  codes, advisors, onCodeCreated, onCodeToggled,
 }: {
   codes: DiscountCode[]
   advisors: Advisor[]
-  onRefresh: () => Promise<void>
-  loadingCodes: boolean
-  fetchError: string
+  onCodeCreated: (code: DiscountCode) => void
+  onCodeToggled: (id: string, newActive: boolean) => void
 }) {
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -255,6 +217,10 @@ function CodesTab({
   })
 
   function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v })) }
+
+  function resetForm() {
+    setForm({ code: '', description: '', discount_type: 'percentage', discount_value: '', referrer_id: '', commission_percentage: '0', max_uses: '', expires_at: '' })
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -271,25 +237,22 @@ function CodesTab({
         max_uses: form.max_uses ? parseInt(form.max_uses) : null,
         expires_at: form.expires_at || null,
       }
-      console.log('Creating code with data:', payload)
       const res = await fetch('/api/admin/discount-codes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify(payload),
       })
-      console.log('API response status:', res.status)
       const data = await res.json()
-      console.log('API response data:', data)
       if (!res.ok) {
         setFormError(data.error || 'Failed to create code')
         return
       }
-      await onRefresh()
-      setSuccessMsg(`Discount code ${payload.code} created successfully!`)
+      onCodeCreated(data)
+      setSuccessMsg(`Code ${payload.code} created!`)
       setTimeout(() => setSuccessMsg(''), 3000)
       setShowForm(false)
-      setForm({ code: '', description: '', discount_type: 'percentage', discount_value: '', referrer_id: '', commission_percentage: '0', max_uses: '', expires_at: '' })
+      resetForm()
     } catch (e: any) {
       setFormError(e.message || 'Failed to create code')
     } finally {
@@ -298,36 +261,25 @@ function CodesTab({
   }
 
   async function toggleActive(id: string, is_active: boolean) {
-    await fetch('/api/admin/discount-codes', {
+    const newActive = !is_active
+    const res = await fetch('/api/admin/discount-codes', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ id, is_active: !is_active }),
+      body: JSON.stringify({ id, is_active: newActive }),
     })
-    onRefresh()
+    if (res.ok) onCodeToggled(id, newActive)
   }
 
   return (
     <div className="space-y-4">
-      {fetchError && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-red-700 text-sm font-semibold mb-1">⚠ Error loading discount codes</p>
-            <p className="text-red-600 text-xs font-mono break-all">{fetchError}</p>
-            <p className="text-red-500 text-xs mt-2">
-              Check Vercel → Settings → Environment Variables → confirm <code className="bg-red-100 px-1 rounded">ADMIN_EMAILS</code> is set to{' '}
-              <code className="bg-red-100 px-1 rounded">pavankumarreddy.poli@gmail.com,info@redcubefinancial.com</code>
-            </p>
-          </div>
-        </div>
-      )}
       {successMsg && (
         <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center justify-between">
           <p className="text-green-700 text-sm font-medium">✓ {successMsg}</p>
           <button onClick={() => setSuccessMsg('')} className="text-green-500 hover:text-green-700 text-sm font-bold">✕</button>
         </div>
       )}
+
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-gray-900">Discount Codes ({codes.length})</h2>
         <button
@@ -383,7 +335,7 @@ function CodesTab({
               <select value={form.referrer_id} onChange={e => set('referrer_id', e.target.value)}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
                 <option value="">— None —</option>
-                {advisors.map(a => (
+                {advisors.map((a: Advisor) => (
                   <option key={a.id} value={a.id}>{a.full_name ?? a.email}</option>
                 ))}
               </select>
@@ -420,7 +372,7 @@ function CodesTab({
               className="px-5 py-2.5 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-semibold rounded-xl transition-colors">
               {saving ? 'Creating…' : 'Create Code'}
             </button>
-            <button type="button" onClick={() => setShowForm(false)}
+            <button type="button" onClick={() => { setShowForm(false); resetForm() }}
               className="px-5 py-2.5 border border-gray-200 text-gray-600 text-sm rounded-xl hover:bg-gray-50 transition-colors">
               Cancel
             </button>
@@ -429,15 +381,7 @@ function CodesTab({
       )}
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-        {loadingCodes ? (
-          <div className="flex items-center justify-center py-12">
-            <svg className="w-5 h-5 animate-spin text-blue-500" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
-            </svg>
-            <span className="ml-2 text-sm text-gray-400">Loading codes...</span>
-          </div>
-        ) : codes.length === 0 ? (
+        {codes.length === 0 ? (
           <div className="text-center py-12 text-sm text-gray-400">
             No discount codes yet. Click &quot;+ New Code&quot; to create one.
           </div>
@@ -608,17 +552,19 @@ function ReferralsTab({ referrals }: { referrals: Referral[] }) {
 
 // ── TAB 3: Commissions ────────────────────────────────────────────────────────
 
-function CommissionsTab({ referrals, onRefresh }: { referrals: Referral[]; onRefresh: () => Promise<void> }) {
+function CommissionsTab({
+  commissions,
+  onCommissionPaid,
+}: {
+  commissions: CommissionPayment[]
+  onCommissionPaid: (id: string, updates: Partial<CommissionPayment>) => void
+}) {
   const [markingId, setMarkingId] = useState<string | null>(null)
-  const [payForm, setPayForm] = useState<{ method: string; reference: string; notes: string }>({ method: 'zelle', reference: '', notes: '' })
+  const [payForm, setPayForm] = useState({ method: 'zelle', reference: '', notes: '' })
   const [saving, setSaving] = useState(false)
 
-  const allCommissions = referrals.flatMap(r =>
-    (r.commissions ?? []).map(c => ({ ...c, referrer: r.referrer, referred: r.referred }))
-  )
-
-  const pending = allCommissions.filter(c => c.status === 'pending')
-  const recent  = allCommissions.filter(c => c.status !== 'pending').slice(0, 20)
+  const pending = commissions.filter(c => c.status === 'pending')
+  const recent  = commissions.filter(c => c.status !== 'pending').slice(0, 20)
 
   async function handleMarkPaid(id: string) {
     setSaving(true)
@@ -627,12 +573,24 @@ function CommissionsTab({ referrals, onRefresh }: { referrals: Referral[]; onRef
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ id, status: 'paid', payment_method: payForm.method, payment_reference: payForm.reference || null, notes: payForm.notes || null }),
+        body: JSON.stringify({
+          id,
+          status: 'paid',
+          payment_method: payForm.method,
+          payment_reference: payForm.reference || null,
+          notes: payForm.notes || null,
+        }),
       })
       if (!res.ok) throw new Error((await res.json()).error)
+      onCommissionPaid(id, {
+        status: 'paid',
+        paid_at: new Date().toISOString(),
+        payment_method: payForm.method,
+        payment_reference: payForm.reference || null,
+        notes: payForm.notes || null,
+      })
       setMarkingId(null)
       setPayForm({ method: 'zelle', reference: '', notes: '' })
-      onRefresh()
     } catch (e: any) {
       alert(e.message)
     } finally {
@@ -640,21 +598,17 @@ function CommissionsTab({ referrals, onRefresh }: { referrals: Referral[]; onRef
     }
   }
 
-  type CommissionWithParties = CommissionPayment & { referrer: Advisor | null; referred: Advisor | null }
-
-  function CommissionRow({ c, showActions }: { c: CommissionWithParties; showActions: boolean }) {
+  function CommissionRow({ c, showActions }: { c: CommissionPayment; showActions: boolean }) {
+    const referredName = c.referral?.referred?.full_name ?? '—'
     return (
       <div className="px-4 py-3 hover:bg-gray-50">
         <div className="flex items-center gap-4 text-sm">
           <div className="min-w-0 flex-1 grid grid-cols-2 sm:grid-cols-5 gap-2">
             <div><p className="text-xs text-gray-400">Period</p><p className="font-medium">{MONTHS[c.period_month - 1]} {c.period_year}</p></div>
             <div><p className="text-xs text-gray-400">Referrer</p><p className="truncate text-gray-900">{c.referrer?.full_name ?? '—'}</p></div>
-            <div className="hidden sm:block"><p className="text-xs text-gray-400">Referred</p><p className="truncate text-gray-600">{c.referred?.full_name ?? '—'}</p></div>
+            <div className="hidden sm:block"><p className="text-xs text-gray-400">Referred</p><p className="truncate text-gray-600">{referredName}</p></div>
             <div className="hidden sm:block"><p className="text-xs text-gray-400">Their Payment</p><p>{fmt$(c.referred_payment)}</p></div>
-            <div>
-              <p className="text-xs text-gray-400">Commission Due</p>
-              <p className="font-bold text-green-700">{fmt$(c.commission_amount)}</p>
-            </div>
+            <div><p className="text-xs text-gray-400">Commission Due</p><p className="font-bold text-green-700">{fmt$(c.commission_amount)}</p></div>
           </div>
           <div className="flex-shrink-0 flex items-center gap-2">
             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${c.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
@@ -716,12 +670,16 @@ function CommissionsTab({ referrals, onRefresh }: { referrals: Referral[]; onRef
       <div>
         <h2 className="text-base font-semibold text-gray-900 mb-3">
           Pending Commissions ({pending.length})
-          {pending.length > 0 && <span className="ml-2 text-amber-600 font-bold">{fmt$(pending.reduce((s, c) => s + c.commission_amount, 0))} total</span>}
+          {pending.length > 0 && (
+            <span className="ml-2 text-amber-600 font-bold">
+              {fmt$(pending.reduce((s, c) => s + c.commission_amount, 0))} total
+            </span>
+          )}
         </h2>
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm divide-y divide-gray-100 overflow-hidden">
           {pending.length === 0
             ? <p className="text-center text-gray-400 text-sm py-10">No pending commissions.</p>
-            : pending.map(c => <CommissionRow key={c.id} c={c as CommissionWithParties} showActions />)
+            : pending.map(c => <CommissionRow key={c.id} c={c} showActions />)
           }
         </div>
       </div>
@@ -730,7 +688,7 @@ function CommissionsTab({ referrals, onRefresh }: { referrals: Referral[]; onRef
         <div>
           <h2 className="text-base font-semibold text-gray-900 mb-3">Recent Payments</h2>
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm divide-y divide-gray-100 overflow-hidden">
-            {recent.map(c => <CommissionRow key={c.id} c={c as CommissionWithParties} showActions={false} />)}
+            {recent.map(c => <CommissionRow key={c.id} c={c} showActions={false} />)}
           </div>
         </div>
       )}
