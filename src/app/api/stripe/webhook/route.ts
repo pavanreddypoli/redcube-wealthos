@@ -133,6 +133,59 @@ export async function POST(request: NextRequest) {
       break
     }
 
+    case 'invoice.payment_succeeded': {
+      const invoice = event.data.object as Stripe.Invoice
+      const customerId = invoice.customer as string
+      const amountPaid = (invoice.amount_paid ?? 0) / 100
+
+      if (!amountPaid || amountPaid <= 0) break
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, referred_by_code')
+        .eq('stripe_customer_id', customerId)
+        .single()
+
+      if (!profile?.referred_by_code) break
+
+      const { data: referral } = await supabase
+        .from('referrals')
+        .select('id, referrer_id, commission_percentage')
+        .eq('referred_id', profile.id)
+        .eq('status', 'active')
+        .single()
+
+      if (!referral) break
+
+      const commissionAmount = amountPaid * (referral.commission_percentage / 100)
+      const now = new Date()
+
+      await supabase.from('commission_payments').insert({
+        referral_id: referral.id,
+        referrer_id: referral.referrer_id,
+        referred_payment: amountPaid,
+        commission_rate: referral.commission_percentage,
+        commission_amount: commissionAmount,
+        period_month: now.getMonth() + 1,
+        period_year: now.getFullYear(),
+        status: 'pending',
+      })
+
+      const { data: existing } = await supabase
+        .from('referrals')
+        .select('total_revenue_generated, total_commission_earned')
+        .eq('id', referral.id)
+        .single()
+
+      await supabase.from('referrals').update({
+        total_revenue_generated: (existing?.total_revenue_generated ?? 0) + amountPaid,
+        total_commission_earned: (existing?.total_commission_earned ?? 0) + commissionAmount,
+      }).eq('id', referral.id)
+
+      console.log('[webhook] Commission recorded:', { referralId: referral.id, commissionAmount })
+      break
+    }
+
     case 'invoice.payment_failed': {
       const invoice = event.data.object as Stripe.Invoice
       const customerId = invoice.customer as string

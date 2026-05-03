@@ -18,11 +18,20 @@ export async function GET() {
     const admin = adminClient()
     const { data, error } = await admin
       .from('profiles')
-      .select('id, full_name, email, advisor_type, advisor_specialty, phone, bio, years_experience, is_accepting_clients')
+      .select('id, full_name, email, advisor_type, advisor_specialty, phone, bio, years_experience, is_accepting_clients, referral_code')
       .eq('id', user.id)
       .single()
 
     if (error) throw error
+
+    if (!data.referral_code && data.full_name) {
+      const namePart = data.full_name.replace(/\s+/g, '').slice(0, 4).toUpperCase()
+      const numPart = String(Math.floor(1000 + Math.random() * 9000))
+      const referral_code = `${namePart}${numPart}`
+      await admin.from('profiles').update({ referral_code }).eq('id', user.id)
+      return NextResponse.json({ ...data, referral_code })
+    }
+
     return NextResponse.json(data)
   } catch (err) {
     console.error('[advisor/profile GET] error:', err)

@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -251,6 +251,19 @@ function SignIn({
 
 // ── MODE 3: Advisor Signup ────────────────────────────────────────────────────
 
+interface DiscountResult {
+  valid: boolean
+  code?: string
+  discount_type?: string
+  discount_value?: number
+  discount_amount?: number
+  full_price?: number
+  discounted_price?: number
+  referrer_name?: string
+  description?: string
+  error?: string
+}
+
 interface SignupForm {
   full_name: string
   email: string
@@ -276,9 +289,10 @@ interface AdvisorSignupProps {
   onAutoSignedIn: () => Promise<void>
   onUpgraded: (message: string) => void
   onSwitchToSignIn: () => void
+  initialDiscountCode?: string
 }
 
-function AdvisorSignup({ onBack, onConfirmationRequired, onAutoSignedIn, onUpgraded, onSwitchToSignIn }: AdvisorSignupProps) {
+function AdvisorSignup({ onBack, onConfirmationRequired, onAutoSignedIn, onUpgraded, onSwitchToSignIn, initialDiscountCode }: AdvisorSignupProps) {
   const [form, setForm] = useState<SignupForm>({
     full_name: '', email: '', password: '', confirm_password: '',
     advisor_type: 'Financial Advisor', advisor_specialty: '',
@@ -290,9 +304,32 @@ function AdvisorSignup({ onBack, onConfirmationRequired, onAutoSignedIn, onUpgra
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
   const [duplicateData,     setDuplicateData]     = useState<DuplicateData | null>(null)
   const [upgradeLoading,    setUpgradeLoading]    = useState(false)
+  const [discountCode,      setDiscountCode]      = useState(initialDiscountCode ?? '')
+  const [discountResult,    setDiscountResult]    = useState<DiscountResult | null>(null)
+  const [validatingCode,    setValidatingCode]    = useState(false)
 
   function set(field: keyof SignupForm, value: string | boolean) {
     setForm(f => ({ ...f, [field]: value }))
+  }
+
+  async function validateCode() {
+    const code = discountCode.trim()
+    if (!code) return
+    setValidatingCode(true)
+    setDiscountResult(null)
+    try {
+      const res = await fetch('/api/discount/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, plan: 'starter' }),
+      })
+      const data = await res.json()
+      setDiscountResult(data)
+    } catch {
+      setDiscountResult({ valid: false, error: 'Failed to validate code' })
+    } finally {
+      setValidatingCode(false)
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -362,6 +399,18 @@ function AdvisorSignup({ onBack, onConfirmationRequired, onAutoSignedIn, onUpgra
         })
         if (clientErr) {
           console.error('[signup] client-side auto signin failed:', clientErr.message)
+        }
+        if (discountResult?.valid && discountCode.trim()) {
+          try {
+            await fetch('/api/discount/apply', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ code: discountCode.trim(), plan: 'starter' }),
+            })
+          } catch {
+            // non-fatal
+          }
         }
         await onAutoSignedIn()
         return
@@ -493,6 +542,45 @@ function AdvisorSignup({ onBack, onConfirmationRequired, onAutoSignedIn, onUpgra
               </div>
 
             </div>
+          </div>
+
+          <div className="border-t border-gray-100 pt-4">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">Referral / Discount Code (optional)</p>
+            <div className="flex gap-2">
+              <TextInput
+                type="text"
+                placeholder="Enter code (e.g. JANE1234)"
+                value={discountCode}
+                onChange={e => { setDiscountCode(e.target.value.toUpperCase()); setDiscountResult(null) }}
+              />
+              <button
+                type="button"
+                onClick={validateCode}
+                disabled={validatingCode || !discountCode.trim()}
+                className="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold rounded-xl transition-colors disabled:opacity-50 flex-shrink-0"
+              >
+                {validatingCode ? 'Checking…' : 'Apply'}
+              </button>
+            </div>
+            {discountResult && (
+              discountResult.valid ? (
+                <div className="mt-2 flex items-start gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2.5">
+                  <span className="text-green-600 font-bold text-sm">✓</span>
+                  <div>
+                    <p className="text-green-800 text-sm font-semibold">
+                      {discountResult.discount_type === 'percentage'
+                        ? `${discountResult.discount_value}% discount applied!`
+                        : `$${discountResult.discount_value} off applied!`}
+                    </p>
+                    {discountResult.referrer_name && (
+                      <p className="text-green-700 text-xs mt-0.5">Referred by {discountResult.referrer_name}</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-2 text-red-600 text-xs">{discountResult.error ?? 'Invalid or expired code.'}</p>
+              )
+            )}
           </div>
 
           {error && <ErrorBox msg={error} />}
@@ -675,6 +763,16 @@ export function LoginClient({ initialError, redirectTo, initialMode }: LoginClie
   const [mode,              setMode]              = useState<Mode>(initialMode)
   const [confirmationEmail, setConfirmationEmail] = useState('')
   const [successMessage,    setSuccessMessage]    = useState('')
+  const [initialCode,       setInitialCode]       = useState('')
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const ref = params.get('ref')
+    if (ref) {
+      setInitialCode(ref.toUpperCase())
+      setMode('signup')
+    }
+  }, [])
 
   async function handleAutoSignedIn() {
     router.refresh()
@@ -703,6 +801,7 @@ export function LoginClient({ initialError, redirectTo, initialMode }: LoginClie
           onAutoSignedIn={handleAutoSignedIn}
           onUpgraded={(msg) => { setSuccessMessage(msg); setMode('signin') }}
           onSwitchToSignIn={() => setMode('signin')}
+          initialDiscountCode={initialCode}
         />
       )}
       {mode === 'forgot' && (

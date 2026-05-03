@@ -4,6 +4,8 @@ import { DashboardShell } from '@/components/layout/DashboardShell'
 
 export const dynamic = 'force-dynamic'
 
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? '').split(',').map(e => e.trim()).filter(Boolean)
+
 export default async function DashboardLayout({
   children,
 }: {
@@ -25,11 +27,14 @@ export default async function DashboardLayout({
     .eq('id', user.id)
     .single()
 
+  const isAdmin = ADMIN_EMAILS.includes(user.email ?? '')
+
   return (
     <DashboardShell
       userEmail={user.email}
       userName={profile?.full_name}
       advisorType={profile?.advisor_type}
+      isAdmin={isAdmin}
     >
       {children}
     </DashboardShell>

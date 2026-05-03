@@ -6,16 +6,18 @@ import { useState } from 'react'
 import {
   LayoutDashboard, Users, ClipboardList, BarChart3,
   Settings, LogOut, Menu, X, CreditCard, UserCircle,
+  DollarSign, ShieldCheck,
 } from 'lucide-react'
 
 const NAV = [
-  { label: 'Dashboard',   href: '/dashboard',          icon: LayoutDashboard },
-  { label: 'Clients',     href: '/dashboard/clients',  icon: Users },
-  { label: 'Assessments', href: '/assessment',         icon: ClipboardList },
-  { label: 'Reports',     href: '/dashboard/reports',  icon: BarChart3 },
-  { label: 'My Profile',  href: '/dashboard/profile',  icon: UserCircle },
-  { label: 'Settings',    href: '/dashboard/settings', icon: Settings },
-  { label: 'Billing',     href: '/settings/billing',   icon: CreditCard },
+  { label: 'Dashboard',   href: '/dashboard',            icon: LayoutDashboard },
+  { label: 'Clients',     href: '/dashboard/clients',    icon: Users },
+  { label: 'Assessments', href: '/assessment',           icon: ClipboardList },
+  { label: 'Reports',     href: '/dashboard/reports',    icon: BarChart3 },
+  { label: 'My Profile',  href: '/dashboard/profile',    icon: UserCircle },
+  { label: 'Referrals',   href: '/dashboard/referrals',  icon: DollarSign },
+  { label: 'Settings',    href: '/dashboard/settings',   icon: Settings },
+  { label: 'Billing',     href: '/settings/billing',     icon: CreditCard },
 ]
 
 interface Props {
@@ -23,9 +25,10 @@ interface Props {
   userEmail?: string
   userName?: string | null
   advisorType?: string | null
+  isAdmin?: boolean
 }
 
-export function DashboardShell({ children, userEmail, userName, advisorType }: Props) {
+export function DashboardShell({ children, userEmail, userName, advisorType, isAdmin }: Props) {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -54,6 +57,20 @@ export function DashboardShell({ children, userEmail, userName, advisorType }: P
           {label}
         </Link>
       ))}
+      {isAdmin && (
+        <Link
+          href="/admin"
+          onClick={onNav}
+          className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
+            pathname.startsWith('/admin')
+              ? 'bg-brand-600 text-white'
+              : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4 flex-shrink-0" />
+          Admin
+        </Link>
+      )}
     </>
   )
 
