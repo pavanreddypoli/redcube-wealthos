@@ -93,6 +93,14 @@ export function AdminClient() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  const fetchCodes = useCallback(async () => {
+    try {
+      const res  = await fetch('/api/admin/discount-codes')
+      const json = await res.json()
+      setCodes(Array.isArray(json) ? json : [])
+    } catch { /* non-fatal background refresh */ }
+  }, [])
+
   const allCommissions = referrals.flatMap(r => r.commissions ?? [])
   const pendingCommissions = allCommissions.filter(c => c.status === 'pending')
   const pendingTotal = pendingCommissions.reduce((s, c) => s + c.commission_amount, 0)
@@ -177,7 +185,7 @@ export function AdminClient() {
           </div>
         ) : (
           <>
-            {tab === 'codes'       && <CodesTab codes={codes} advisors={advisors} onRefresh={loadData} />}
+            {tab === 'codes'       && <CodesTab codes={codes} advisors={advisors} onRefresh={fetchCodes} />}
             {tab === 'referrals'   && <ReferralsTab referrals={referrals} />}
             {tab === 'commissions' && <CommissionsTab referrals={referrals} onRefresh={loadData} />}
           </>
@@ -189,10 +197,11 @@ export function AdminClient() {
 
 // ── TAB 1: Discount Codes ─────────────────────────────────────────────────────
 
-function CodesTab({ codes, advisors, onRefresh }: { codes: DiscountCode[]; advisors: Advisor[]; onRefresh: () => void }) {
+function CodesTab({ codes, advisors, onRefresh }: { codes: DiscountCode[]; advisors: Advisor[]; onRefresh: () => Promise<void> }) {
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
   const [form, setForm] = useState({
     code: '', description: '', discount_type: 'percentage', discount_value: '',
     referrer_id: '', commission_percentage: '0', max_uses: '', expires_at: '',
@@ -205,27 +214,37 @@ function CodesTab({ codes, advisors, onRefresh }: { codes: DiscountCode[]; advis
     setSaving(true)
     setFormError('')
     try {
+      const payload = {
+        code: form.code.toUpperCase().trim(),
+        description: form.description || null,
+        discount_type: form.discount_type,
+        discount_value: parseFloat(String(form.discount_value)) || 0,
+        referrer_id: form.referrer_id || null,
+        commission_percentage: parseFloat(String(form.commission_percentage)) || 0,
+        max_uses: form.max_uses ? parseInt(form.max_uses) : null,
+        expires_at: form.expires_at || null,
+      }
+      console.log('Creating code with data:', payload)
       const res = await fetch('/api/admin/discount-codes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: form.code,
-          description: form.description || null,
-          discount_type: form.discount_type,
-          discount_value: Number(form.discount_value),
-          referrer_id: form.referrer_id || null,
-          commission_percentage: Number(form.commission_percentage),
-          max_uses: form.max_uses ? Number(form.max_uses) : null,
-          expires_at: form.expires_at || null,
-        }),
+        credentials: 'include',
+        body: JSON.stringify(payload),
       })
+      console.log('API response status:', res.status)
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
+      console.log('API response data:', data)
+      if (!res.ok) {
+        setFormError(data.error || 'Failed to create code')
+        return
+      }
+      await onRefresh()
+      setSuccessMsg(`Discount code ${payload.code} created successfully!`)
+      setTimeout(() => setSuccessMsg(''), 3000)
       setShowForm(false)
       setForm({ code: '', description: '', discount_type: 'percentage', discount_value: '', referrer_id: '', commission_percentage: '0', max_uses: '', expires_at: '' })
-      onRefresh()
     } catch (e: any) {
-      setFormError(e.message)
+      setFormError(e.message || 'Failed to create code')
     } finally {
       setSaving(false)
     }
@@ -242,6 +261,12 @@ function CodesTab({ codes, advisors, onRefresh }: { codes: DiscountCode[]; advis
 
   return (
     <div className="space-y-4">
+      {successMsg && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center justify-between">
+          <p className="text-green-700 text-sm font-medium">✓ {successMsg}</p>
+          <button onClick={() => setSuccessMsg('')} className="text-green-500 hover:text-green-700 text-sm font-bold">✕</button>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-gray-900">Discount Codes ({codes.length})</h2>
         <button
@@ -323,7 +348,11 @@ function CodesTab({ codes, advisors, onRefresh }: { codes: DiscountCode[]; advis
             </div>
           </div>
 
-          {formError && <p className="text-sm text-red-600">{formError}</p>}
+          {formError && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">
+              {formError}
+            </div>
+          )}
 
           <div className="flex gap-2 pt-2">
             <button type="submit" disabled={saving}

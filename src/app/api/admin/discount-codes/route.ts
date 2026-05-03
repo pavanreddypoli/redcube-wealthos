@@ -7,6 +7,9 @@ const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? '').split(',').map(e => e.trim
 async function requireAdmin(): Promise<{ user: { id: string; email?: string } } | NextResponse> {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
+  console.log('[admin] user email:', user?.email)
+  console.log('[admin] admin emails:', process.env.ADMIN_EMAILS)
+  console.log('[admin] is admin:', !!(user?.email && ADMIN_EMAILS.includes(user.email)))
   if (!user || !ADMIN_EMAILS.includes(user.email ?? '')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
