@@ -257,7 +257,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Fire-and-forget: generate PDF and email advisor (non-blocking)
-    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://redcube-wealthos.vercel.app').replace(/\/$/, '')
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://wealthplanrai.vercel.app').replace(/\/$/, '')
     const sendReportUrl = `${appUrl}/api/assessment/send-report`
     console.log('[assessment] Triggering send-report at:', sendReportUrl, 'for ID:', assessment.id)
     fetch(sendReportUrl, {

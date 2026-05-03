@@ -44,7 +44,7 @@
 - [ ] Add `COMPANY_BACKUP_EMAIL` in Vercel env variables (Gmail backup address)
 - [ ] Register Stripe webhook endpoint in Stripe Dashboard (see instructions below)
 - [ ] Add `STRIPE_WEBHOOK_SECRET` to Vercel env variables after webhook creation
-- [ ] Add `https://redcube-wealthos.vercel.app/auth/reset-password` to Supabase allowed redirect URLs
+- [ ] Add `https://wealthplanrai.vercel.app/auth/reset-password` to Supabase allowed redirect URLs
 - [ ] Run migration 006 and 007 in Supabase SQL editor if not already done
 
 ### Testing / verification (needs production environment):
@@ -96,7 +96,7 @@
 
 ## Stripe webhook setup (required for plan activation):
 Go to stripe.com → Developers → Webhooks → Add endpoint
-Endpoint URL: `https://redcube-wealthos.vercel.app/api/stripe/webhook`
+Endpoint URL: `https://wealthplanrai.vercel.app/api/stripe/webhook`
 Events to listen for:
 - `checkout.session.completed`
 - `customer.subscription.updated`
@@ -111,7 +111,7 @@ After adding, copy Signing Secret → add to Vercel as `STRIPE_WEBHOOK_SECRET=wh
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `NEXT_PUBLIC_APP_URL` = https://redcube-wealthos.vercel.app
+- `NEXT_PUBLIC_APP_URL` = https://wealthplanrai.vercel.app
 - `SENDGRID_API_KEY`
 - `SENDGRID_FROM_EMAIL` = info@redcubefinancial.com
 - `COMPANY_EMAIL` = info@redcubefinancial.com
@@ -125,12 +125,10 @@ After adding, copy Signing Secret → add to Vercel as `STRIPE_WEBHOOK_SECRET=wh
 
 ---
 
-## GitHub repo:
-https://github.com/pavanreddypoli/redcube-wealthos
-
-## Live URL:
-https://redcube-wealthos.vercel.app
-
-## Database:
-Supabase project: gvrycagcpyqhrixyscnc
-Tables: profiles, assessments, assessment_answers, advisor_notes, clients, compliance_items, firms
+## Project details:
+- **Product name:** WealthPlanrAI
+- **Domain:** wealthplanrai.com
+- **GitHub:** https://github.com/pavanreddypoli/wealthplanrai
+- **Vercel:** https://wealthplanrai.vercel.app
+- **Supabase project:** gvrycagcpyqhrixyscnc
+- **Tables:** profiles, assessments, assessment_answers, advisor_notes, clients, compliance_items, firms

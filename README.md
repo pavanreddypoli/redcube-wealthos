@@ -1,6 +1,6 @@
-# RedCube WealthOS
+# WealthPlanrAI
 
-AI-powered wealth management platform for financial advisors.
+AI-powered financial planning platform for modern advisors.
 
 ## Tech Stack
 
@@ -22,7 +22,7 @@ AI-powered wealth management platform for financial advisors.
 
 ```bash
 git clone <your-repo>
-cd redcube-wealthos
+cd wealthplanrai
 npm install
 ```
 
