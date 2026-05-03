@@ -66,7 +66,7 @@ function ErrorBox({ msg }: { msg: string }) {
 
 function Logo() {
   return (
-    <Link href="/" className="flex items-center gap-2 font-semibold text-gray-900 mb-8">
+    <Link href="/" className="flex items-center gap-2 font-semibold text-gray-900 mb-4">
       <span className="w-9 h-9 rounded-xl bg-brand-600 flex items-center justify-center">
         <BarChart3 className="w-5 h-5 text-white" />
       </span>
@@ -80,7 +80,7 @@ function Logo() {
 function LoginIllustration() {
   return (
     <div className="text-center mb-2">
-      <svg width="80" height="80" viewBox="0 0 80 80" className="mx-auto">
+      <svg width="60" height="60" viewBox="0 0 80 80" className="mx-auto">
         <circle cx="40" cy="40" r="38" fill="#EFF6FF" stroke="#BFDBFE" strokeWidth="1"/>
         <rect x="18" y="50" width="8" height="16" rx="2" fill="#93C5FD"/>
         <rect x="30" y="40" width="8" height="26" rx="2" fill="#60A5FA"/>
@@ -110,7 +110,7 @@ function Landing({ onSignIn, onSignUp }: { onSignIn: () => void; onSignUp: () =>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
 
         {/* Client card */}
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-7 flex flex-col items-center text-center">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 flex flex-col items-center text-center">
           <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-4">
             <User className="w-7 h-7 text-blue-600" />
           </div>
@@ -120,7 +120,7 @@ function Landing({ onSignIn, onSignUp }: { onSignIn: () => void; onSignUp: () =>
           </p>
           <Link
             href="/assessment"
-            className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-xl transition-colors flex items-center justify-center gap-2"
+            className="inline-flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-semibold rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors"
           >
             Take Free Assessment <ArrowRight className="w-4 h-4" />
           </Link>
@@ -130,7 +130,7 @@ function Landing({ onSignIn, onSignUp }: { onSignIn: () => void; onSignUp: () =>
         </div>
 
         {/* Advisor card */}
-        <div className="bg-white rounded-2xl border-2 border-brand-200 shadow-sm p-7 flex flex-col items-center text-center">
+        <div className="bg-white rounded-2xl border-2 border-brand-200 shadow-sm p-6 flex flex-col items-center text-center">
           <div className="w-14 h-14 rounded-2xl bg-brand-50 flex items-center justify-center mb-4">
             <Briefcase className="w-7 h-7 text-brand-600" />
           </div>
@@ -140,7 +140,7 @@ function Landing({ onSignIn, onSignUp }: { onSignIn: () => void; onSignUp: () =>
           </p>
           <button
             onClick={onSignUp}
-            className="w-full py-3 bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm rounded-xl transition-colors flex items-center justify-center gap-2"
+            className="inline-flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-semibold rounded-xl bg-brand-600 hover:bg-brand-700 text-white transition-colors"
           >
             Sign Up as Advisor <ArrowRight className="w-4 h-4" />
           </button>
@@ -829,39 +829,52 @@ export function LoginClient({ initialError, redirectTo, initialMode }: LoginClie
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center px-4 py-12">
-      {mode === 'landing' && (
-        <Landing onSignIn={() => setMode('signin')} onSignUp={() => setMode('signup')} />
-      )}
-      {mode === 'signin' && (
-        <SignIn
-          onBack={() => setMode('landing')}
-          onForgotPassword={() => setMode('forgot')}
-          successMessage={successMessage}
-          initialError={initialError}
-          redirectTo={redirectTo}
-        />
-      )}
-      {mode === 'signup' && (
-        <AdvisorSignup
-          onBack={() => setMode('landing')}
-          onConfirmationRequired={(email) => { setConfirmationEmail(email); setMode('confirmation') }}
-          onAutoSignedIn={handleAutoSignedIn}
-          onUpgraded={(msg) => { setSuccessMessage(msg); setMode('signin') }}
-          onSwitchToSignIn={() => setMode('signin')}
-          initialDiscountCode={initialCode}
-          selectedPlan={selectedPlan || undefined}
-        />
-      )}
-      {mode === 'forgot' && (
-        <ForgotPassword onBack={() => setMode('signin')} />
-      )}
-      {mode === 'confirmation' && (
-        <ConfirmationPending
-          email={confirmationEmail}
-          onSignIn={() => setMode('signin')}
-        />
-      )}
+    <div
+      className="min-h-screen flex flex-col items-center justify-center px-4 py-8 relative overflow-hidden"
+      style={{ background: 'linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%)' }}
+    >
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          backgroundImage: 'radial-gradient(circle, #CBD5E1 1px, transparent 1px)',
+          backgroundSize: '24px 24px',
+          opacity: 0.45,
+        }}
+      />
+      <div className="relative z-10 w-full flex flex-col items-center">
+        {mode === 'landing' && (
+          <Landing onSignIn={() => setMode('signin')} onSignUp={() => setMode('signup')} />
+        )}
+        {mode === 'signin' && (
+          <SignIn
+            onBack={() => setMode('landing')}
+            onForgotPassword={() => setMode('forgot')}
+            successMessage={successMessage}
+            initialError={initialError}
+            redirectTo={redirectTo}
+          />
+        )}
+        {mode === 'signup' && (
+          <AdvisorSignup
+            onBack={() => setMode('landing')}
+            onConfirmationRequired={(email) => { setConfirmationEmail(email); setMode('confirmation') }}
+            onAutoSignedIn={handleAutoSignedIn}
+            onUpgraded={(msg) => { setSuccessMessage(msg); setMode('signin') }}
+            onSwitchToSignIn={() => setMode('signin')}
+            initialDiscountCode={initialCode}
+            selectedPlan={selectedPlan || undefined}
+          />
+        )}
+        {mode === 'forgot' && (
+          <ForgotPassword onBack={() => setMode('signin')} />
+        )}
+        {mode === 'confirmation' && (
+          <ConfirmationPending
+            email={confirmationEmail}
+            onSignIn={() => setMode('signin')}
+          />
+        )}
+      </div>
     </div>
   )
 }
