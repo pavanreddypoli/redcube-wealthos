@@ -68,15 +68,27 @@ export function AdminClient() {
   const [referrals, setReferrals] = useState<Referral[]>([])
   const [advisors, setAdvisors] = useState<Advisor[]>([])
   const [loadingCodes, setLoadingCodes] = useState(true)
+  const [fetchError, setFetchError] = useState('')
   const [error, setError] = useState('')
 
   const fetchCodes = useCallback(async () => {
     try {
       setLoadingCodes(true)
+      setFetchError('')
       const res = await fetch('/api/admin/discount-codes', { credentials: 'include' })
       console.log('[admin] fetch codes status:', res.status)
+      if (res.status === 401) {
+        const body = await res.json().catch(() => ({}))
+        const msg = 'Unauthorized (401) — ADMIN_EMAILS env variable may be missing on Vercel. ' +
+          (body.error ? `Server: ${body.error}` : '')
+        console.error('[admin] fetch codes 401:', msg)
+        setFetchError(msg)
+        return
+      }
       if (!res.ok) {
-        console.error('[admin] fetch codes failed:', await res.text())
+        const text = await res.text()
+        console.error('[admin] fetch codes failed:', res.status, text)
+        setFetchError(`API error ${res.status}: ${text}`)
         return
       }
       const data = await res.json()
@@ -84,6 +96,7 @@ export function AdminClient() {
       setCodes(Array.isArray(data) ? data : [])
     } catch (e: any) {
       console.error('[admin] fetchCodes error:', e.message)
+      setFetchError(`Network error: ${e.message}`)
     } finally {
       setLoadingCodes(false)
     }
@@ -210,7 +223,7 @@ export function AdminClient() {
           </div>
 
           <>
-            {tab === 'codes'       && <CodesTab codes={codes} advisors={advisors} onRefresh={fetchCodes} loadingCodes={loadingCodes} />}
+            {tab === 'codes'       && <CodesTab codes={codes} advisors={advisors} onRefresh={fetchCodes} loadingCodes={loadingCodes} fetchError={fetchError} />}
             {tab === 'referrals'   && <ReferralsTab referrals={referrals} />}
             {tab === 'commissions' && <CommissionsTab referrals={referrals} onRefresh={fetchReferrals} />}
           </>
@@ -224,12 +237,13 @@ export function AdminClient() {
 // ── TAB 1: Discount Codes ─────────────────────────────────────────────────────
 
 function CodesTab({
-  codes, advisors, onRefresh, loadingCodes,
+  codes, advisors, onRefresh, loadingCodes, fetchError,
 }: {
   codes: DiscountCode[]
   advisors: Advisor[]
   onRefresh: () => Promise<void>
   loadingCodes: boolean
+  fetchError: string
 }) {
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -295,6 +309,19 @@ function CodesTab({
 
   return (
     <div className="space-y-4">
+      {fetchError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-red-700 text-sm font-semibold mb-1">⚠ Error loading discount codes</p>
+            <p className="text-red-600 text-xs font-mono break-all">{fetchError}</p>
+            <p className="text-red-500 text-xs mt-2">
+              Check Vercel → Settings → Environment Variables → confirm <code className="bg-red-100 px-1 rounded">ADMIN_EMAILS</code> is set to{' '}
+              <code className="bg-red-100 px-1 rounded">pavankumarreddy.poli@gmail.com,info@redcubefinancial.com</code>
+            </p>
+          </div>
+        </div>
+      )}
       {successMsg && (
         <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center justify-between">
           <p className="text-green-700 text-sm font-medium">✓ {successMsg}</p>
