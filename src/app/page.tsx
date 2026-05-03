@@ -155,7 +155,7 @@ export default function HomePage() {
               required regulatory disclaimers — reviewed and updated quarterly.
             </p>
           </div>
-          <Link href="/assessment" className="flex-shrink-0">
+          <Link href="/pricing" className="flex-shrink-0">
             <Button size="lg" className="bg-white text-brand-700 hover:bg-brand-50">
               Get started free <ArrowRight className="w-4 h-4" />
             </Button>
@@ -201,7 +201,7 @@ export default function HomePage() {
                     </li>
                   ))}
                 </ul>
-                <Link href="/assessment" className="block mt-8">
+                <Link href="/pricing" className="block mt-8">
                   <Button
                     className={`w-full ${plan.highlighted ? 'bg-white text-brand-700 hover:bg-brand-50 border-0' : ''}`}
                     variant={plan.highlighted ? 'secondary' : 'primary'}
