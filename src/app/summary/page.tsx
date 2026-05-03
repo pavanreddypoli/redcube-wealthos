@@ -29,7 +29,7 @@ interface PillarData {
   icon: React.ReactNode
   accent: string       // text color
   bgAccent: string     // icon bg color
-  borderAccent: string // card top border
+  borderAccent: string // card left border
 }
 
 interface ProductRec {
@@ -248,7 +248,7 @@ export default async function SummaryPage({
       icon:         <Shield className="w-6 h-6 text-blue-600" />,
       accent:       'text-blue-700',
       bgAccent:     'bg-blue-100',
-      borderAccent: 'border-t-blue-500',
+      borderAccent: 'border-l-blue-500',
     },
     {
       key:          'grow',
@@ -259,7 +259,7 @@ export default async function SummaryPage({
       icon:         <TrendingUp className="w-6 h-6 text-green-600" />,
       accent:       'text-green-700',
       bgAccent:     'bg-green-100',
-      borderAccent: 'border-t-green-500',
+      borderAccent: 'border-l-green-500',
     },
     {
       key:          'legacy',
@@ -270,7 +270,7 @@ export default async function SummaryPage({
       icon:         <Heart className="w-6 h-6 text-purple-600" />,
       accent:       'text-purple-700',
       bgAccent:     'bg-purple-100',
-      borderAccent: 'border-t-purple-500',
+      borderAccent: 'border-l-purple-500',
     },
   ]
 
@@ -287,16 +287,16 @@ export default async function SummaryPage({
       </header>
 
       {/* Hero gradient */}
-      <div className="bg-[#EFF6FF] border-b border-blue-100 px-4 sm:px-6 py-7 sm:py-10">
+      <div className="px-4 sm:px-6 py-7 sm:py-10" style={{ background: 'linear-gradient(135deg, #0F172A, #1E3A8A, #2563EB)' }}>
         <div className="max-w-5xl mx-auto text-center">
           <ScoreIllustration score={overall} />
-          <p className="text-brand-600 text-xs font-semibold uppercase tracking-widest mb-3">
+          <p className="text-blue-200 text-xs font-semibold uppercase tracking-widest mb-3">
             Evaluated against the WealthPlanrAI Three Pillars
           </p>
-          <h1 className="font-heading text-3xl sm:text-4xl font-bold text-gray-900 mb-2">
+          <h1 className="font-heading text-3xl sm:text-4xl font-bold text-white mb-2">
             Your Financial Health Summary
           </h1>
-          <p className="text-gray-500 text-sm mb-1">
+          <p className="text-sm mb-1" style={{ color: 'rgba(191,219,254,0.7)' }}>
             {row.full_name ?? 'Assessment'} &nbsp;·&nbsp; {dateStr}
           </p>
         </div>
@@ -311,7 +311,7 @@ export default async function SummaryPage({
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {pillarCards.map(p => (
-              <div key={p.key} className={`bg-white rounded-2xl border border-gray-200 shadow-sm border-t-4 ${p.borderAccent} p-4 sm:p-6 flex flex-col`}>
+              <div key={p.key} className={`bg-white rounded-2xl border border-gray-200 shadow-sm border-l-4 ${p.borderAccent} p-4 sm:p-6 flex flex-col`}>
                 {/* Icon + Name */}
                 <div className={`w-11 h-11 rounded-xl ${p.bgAccent} flex items-center justify-center mb-4`}>
                   {p.icon}

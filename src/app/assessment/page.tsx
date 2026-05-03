@@ -186,12 +186,11 @@ function G2({ children }: { children:React.ReactNode }) {
   return <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{children}</div>
 }
 
-function SecHead({ icon, title, sub, color }: { icon:string; title:string; sub:string; color?:string }) {
+function SecHead({ icon, title, sub, bgClass }: { icon:string; title:string; sub:string; bgClass?:string }) {
   return (
     <div className="flex items-start gap-4 mb-7 pb-5 border-b border-gray-100">
       <div
-        className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0 shadow-sm"
-        style={{background: color ?? '#EFF6FF'}}
+        className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0 shadow-sm ${bgClass ?? 'bg-blue-50'}`}
       >
         {icon}
       </div>
@@ -360,7 +359,7 @@ export default function AssessmentPage() {
 
         {/* ── Step 0: Personal ─────────────────────────────────────── */}
         {step===0 && <>
-          <SecHead icon="👤" title="Personal Information" sub="Tell us about yourself so we can tailor your financial plan." color="#EFF6FF" />
+          <SecHead icon="👤" title="Personal Information" sub="Tell us about yourself so we can tailor your financial plan." bgClass="bg-blue-50" />
           <G2>
             <F label="First Name" req><TI val={data.firstName} set={v=>s('firstName',v)} ph="Jane" /></F>
             <F label="Last Name" req><TI val={data.lastName} set={v=>s('lastName',v)} ph="Smith" /></F>
@@ -395,7 +394,7 @@ export default function AssessmentPage() {
 
         {/* ── Step 1: Cash Flow ─────────────────────────────────────── */}
         {step===1 && <>
-          <SecHead icon="💵" title="Cash Flow" sub="Understanding your income and spending is the foundation of your financial plan." color="#F0FDF4" />
+          <SecHead icon="💵" title="Cash Flow" sub="Understanding your income and spending is the foundation of your financial plan." bgClass="bg-green-50" />
           <G2>
             <F label="Annual Gross Income" req hint="Before taxes"><TI val={data.grossIncome} set={v=>s('grossIncome',v)} ph="120,000" pre="$" type="number" /></F>
             <F label="Spouse / Partner Income" hint="If applicable"><TI val={data.spouseIncome} set={v=>s('spouseIncome',v)} ph="0" pre="$" type="number" /></F>
@@ -419,7 +418,7 @@ export default function AssessmentPage() {
 
         {/* ── Step 2: Protection ────────────────────────────────────── */}
         {step===2 && <>
-          <SecHead icon="🛡️" title="Protection & Insurance" sub="Insurance is the foundation that protects everything you're building." color="#F5F3FF" />
+          <SecHead icon="🛡️" title="Protection & Insurance" sub="Insurance is the foundation that protects everything you're building." bgClass="bg-purple-50" />
           <F label="Do you have life insurance?">
             <Radio val={data.hasLifeInsurance} set={v=>s('hasLifeInsurance',v)}
               opts={[{value:'yes',label:'Yes'},{value:'no',label:'No'},{value:'unsure',label:'Not sure'}]} />
@@ -453,7 +452,7 @@ export default function AssessmentPage() {
 
         {/* ── Step 3: Retirement ────────────────────────────────────── */}
         {step===3 && <>
-          <SecHead icon="🏖️" title="Retirement Planning" sub="Let's map out the retirement you've envisioned." color="#FFF7ED" />
+          <SecHead icon="🏖️" title="Retirement Planning" sub="Let's map out the retirement you've envisioned." bgClass="bg-orange-50" />
           <G2>
             <F label="Target Retirement Age"><TI val={data.retirementAge} set={v=>s('retirementAge',v)} ph="65" type="number" /></F>
             <F label="Desired Monthly Income in Retirement"><TI val={data.retirementIncomeGoal} set={v=>s('retirementIncomeGoal',v)} ph="8,000" pre="$" type="number" /></F>
@@ -478,7 +477,7 @@ export default function AssessmentPage() {
 
         {/* ── Step 4: Investments ───────────────────────────────────── */}
         {step===4 && <>
-          <SecHead icon="📈" title="Investments" sub="Help us understand your current portfolio and philosophy." color="#ECFDF5" />
+          <SecHead icon="📈" title="Investments" sub="Help us understand your current portfolio and philosophy." bgClass="bg-emerald-50" />
           <G2>
             <F label="Total Investable Assets" hint="Outside retirement accounts"><TI val={data.investableAssets} set={v=>s('investableAssets',v)} ph="150,000" pre="$" type="number" /></F>
             <F label="Investment Horizon" req>
@@ -512,7 +511,7 @@ export default function AssessmentPage() {
 
         {/* ── Step 5: Mortgage ──────────────────────────────────────── */}
         {step===5 && <>
-          <SecHead icon="🏠" title="Mortgage & Real Estate" sub="Your home is often your largest asset — let's plan around it." color="#F0F9FF" />
+          <SecHead icon="🏠" title="Mortgage & Real Estate" sub="Your home is often your largest asset — let's plan around it." bgClass="bg-sky-50" />
           <F label="Home ownership status?">
             <Radio val={data.homeOwnership} set={v=>s('homeOwnership',v)}
               opts={[{value:'own',label:'Own outright'},{value:'mortgage',label:'Own with mortgage'},{value:'rent',label:'Renting'},{value:'other',label:'Other'}]} />
@@ -544,7 +543,7 @@ export default function AssessmentPage() {
 
         {/* ── Step 6: Tax ───────────────────────────────────────────── */}
         {step===6 && <>
-          <SecHead icon="🧾" title="Tax Planning" sub="Smart tax planning can meaningfully grow your net wealth over time." color="#F7FEE7" />
+          <SecHead icon="🧾" title="Tax Planning" sub="Smart tax planning can meaningfully grow your net wealth over time." bgClass="bg-lime-50" />
           <G2>
             <F label="Filing Status">
               <Sel val={data.filingStatus} set={v=>s('filingStatus',v)} ph="Select"
@@ -581,7 +580,7 @@ export default function AssessmentPage() {
 
         {/* ── Step 7: Estate ────────────────────────────────────────── */}
         {step===7 && <>
-          <SecHead icon="📋" title="Estate Planning" sub="Protect your legacy and ensure your wishes are honoured." color="#FDF4FF" />
+          <SecHead icon="📋" title="Estate Planning" sub="Protect your legacy and ensure your wishes are honoured." bgClass="bg-fuchsia-50" />
           <G2>
             <F label="Do you have a will?">
               <Radio val={data.hasWill} set={v=>s('hasWill',v)} opts={[{value:'yes',label:'Yes, current'},{value:'outdated',label:'Yes, outdated'},{value:'no',label:'No'}]} />
@@ -617,7 +616,7 @@ export default function AssessmentPage() {
 
         {/* ── Step 8: Priorities ────────────────────────────────────── */}
         {step===8 && <>
-          <SecHead icon="🎯" title="Your Priorities" sub="Help us focus on what matters most to you right now." color="#FFF1F2" />
+          <SecHead icon="🎯" title="Your Priorities" sub="Help us focus on what matters most to you right now." bgClass="bg-rose-50" />
           <F label="Top Financial Priority" req>
             <Sel val={data.topPriority1} set={v=>s('topPriority1',v)} ph="Select your #1 priority"
               opts={[{value:'retirement',label:'Retirement planning'},{value:'debt',label:'Eliminating debt'},{value:'savings',label:'Building savings'},{value:'insurance',label:'Insurance & protection'},{value:'estate',label:'Estate planning'},{value:'tax',label:'Reducing taxes'},{value:'investments',label:'Growing investments'},{value:'education',label:'Education funding'},{value:'home',label:'Buying a home'}]} />
