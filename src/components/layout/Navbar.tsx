@@ -20,11 +20,18 @@ export function Navbar() {
     <header className="sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-gray-100">
       <nav className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2 font-semibold text-gray-900">
-          <span className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center">
-            <BarChart3 className="w-4 h-4 text-white" />
+        <Link href="/" className="flex items-center gap-2">
+          <div style={{
+            width: '32px', height: '32px', borderRadius: '8px',
+            background: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '16px', flexShrink: 0,
+          }}>
+            📈
+          </div>
+          <span style={{ fontFamily: 'Sora, sans-serif', fontWeight: 700, fontSize: '16px', color: '#111827' }}>
+            WealthPlanr<span style={{ color: '#3B82F6' }}>AI</span>
           </span>
-          <span>WealthPlanr<span className="text-brand-600">AI</span></span>
         </Link>
 
         {/* Desktop links */}

@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { Navbar } from '@/components/layout/Navbar'
-import { BarChart3, ShieldCheck, Brain, Zap, Users, TrendingUp } from 'lucide-react'
+import { BarChart3, ShieldCheck } from 'lucide-react'
 
 const heroStyles = `
   @keyframes float {
@@ -204,47 +204,90 @@ function AnimatedDashboard() {
 
 const FEATURES = [
   {
-    icon: Brain,
-    title: 'AI Advisor',
-    description: 'Ask any financial planning question. Get compliance-aware answers with regulatory citations built in.',
-    gradient: 'linear-gradient(135deg, #EFF6FF, #DBEAFE)',
-    iconColor: '#2563EB',
+    icon: '🤖',
+    gradient: 'linear-gradient(135deg, #667eea, #764ba2)',
+    shadow: 'rgba(102,126,234,0.4)',
+    title: 'AI-Powered Analysis',
+    desc: 'Claude AI analyzes all 9 financial dimensions and generates compliance-ready plans in minutes.',
   },
   {
-    icon: ShieldCheck,
-    title: 'Compliance-first',
-    description: 'Every output auto-includes FINRA, SEC, and Reg BI disclaimers. Stay protected, always.',
-    gradient: 'linear-gradient(135deg, #F0FDF4, #DCFCE7)',
-    iconColor: '#16A34A',
+    icon: '🛡️',
+    gradient: 'linear-gradient(135deg, #f093fb, #f5576c)',
+    shadow: 'rgba(245,87,108,0.4)',
+    title: 'FINRA & SEC Compliant',
+    desc: 'Every report includes proper disclaimers, Reg BI language, and audit-ready documentation.',
   },
   {
-    icon: BarChart3,
-    title: 'Monte Carlo projections',
-    description: 'Run thousands of simulations in seconds. Show clients probability-based retirement outcomes.',
-    gradient: 'linear-gradient(135deg, #F5F3FF, #EDE9FE)',
-    iconColor: '#7C3AED',
+    icon: '📊',
+    gradient: 'linear-gradient(135deg, #4facfe, #00f2fe)',
+    shadow: 'rgba(79,172,254,0.4)',
+    title: 'Three Pillars Framework',
+    desc: 'Protect, Grow, and Leave a Legacy — a comprehensive framework clients instantly understand.',
   },
   {
-    icon: TrendingUp,
-    title: 'Tax-loss harvesting',
-    description: 'Automatically surface harvest opportunities with wash-sale rule guidance built in.',
-    gradient: 'linear-gradient(135deg, #FFFBEB, #FEF3C7)',
-    iconColor: '#D97706',
+    icon: '⚡',
+    gradient: 'linear-gradient(135deg, #43e97b, #38f9d7)',
+    shadow: 'rgba(67,233,123,0.4)',
+    title: 'Instant PDF Reports',
+    desc: 'Client summary and advisor analysis PDFs generated automatically and emailed instantly.',
   },
   {
-    icon: Users,
-    title: 'Client management',
-    description: 'Unified client profiles with portfolio allocation, risk scoring, and review tracking.',
-    gradient: 'linear-gradient(135deg, #FFF1F2, #FFE4E6)',
-    iconColor: '#E11D48',
+    icon: '🎯',
+    gradient: 'linear-gradient(135deg, #fa709a, #fee140)',
+    shadow: 'rgba(250,112,154,0.4)',
+    title: 'Smart Lead Matching',
+    desc: 'Clients browse and select their preferred advisor — warm leads delivered to your inbox.',
   },
   {
-    icon: Zap,
-    title: 'Smart reports',
-    description: 'Generate and email polished client reports in one click — with disclaimer auto-append.',
-    gradient: 'linear-gradient(135deg, #ECFEFF, #CFFAFE)',
-    iconColor: '#0891B2',
+    icon: '📱',
+    gradient: 'linear-gradient(135deg, #a18cd1, #fbc2eb)',
+    shadow: 'rgba(161,140,209,0.4)',
+    title: 'Mobile Friendly',
+    desc: 'Clients complete assessments on any device — phone, tablet, or desktop.',
   },
+]
+
+const STEPS = [
+  {
+    number: '01',
+    icon: '📋',
+    color: '#3B82F6',
+    bg: '#EFF6FF',
+    title: 'Client Completes Assessment',
+    desc: 'Client fills out our 9-section financial assessment in about 8 minutes.',
+  },
+  {
+    number: '02',
+    icon: '🤖',
+    color: '#8B5CF6',
+    bg: '#F5F3FF',
+    title: 'AI Analyzes Everything',
+    desc: 'WealthPlanrAI scores all dimensions and identifies gaps across all three pillars.',
+  },
+  {
+    number: '03',
+    icon: '📧',
+    color: '#10B981',
+    bg: '#F0FDF4',
+    title: 'Reports Delivered Instantly',
+    desc: 'Client gets a summary email. You get a full advisor report with PDF attachments.',
+  },
+  {
+    number: '04',
+    icon: '🤝',
+    color: '#F59E0B',
+    bg: '#FFFBEB',
+    title: 'Advisor Connects with Client',
+    desc: 'Client selects you as their advisor. You reach out with a personalized plan.',
+  },
+]
+
+const BADGES = [
+  { icon: '🏛️', label: 'SEC Compliant' },
+  { icon: '⚖️', label: 'FINRA Registered' },
+  { icon: '🔒', label: 'Bank-level Security' },
+  { icon: '📜', label: 'Reg BI Ready' },
+  { icon: '🛡️', label: 'SOC 2 Infrastructure' },
 ]
 
 const PLANS = [
@@ -375,43 +418,44 @@ export default function HomePage() {
               ))}
             </div>
 
-            {/* CTA buttons */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+            {/* CTA buttons — inline-flex so they never stretch full-width */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center' }}
+              className="lg:justify-start">
               <a
                 href="/assessment"
                 style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  padding: '10px 20px', borderRadius: '12px', fontSize: '14px', fontWeight: 700,
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
                   background: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
-                  color: 'white', textDecoration: 'none',
-                  boxShadow: '0 8px 24px rgba(37,99,235,0.4)',
-                  transition: 'transform 0.2s, box-shadow 0.2s',
+                  color: 'white', padding: '10px 20px', borderRadius: '10px',
+                  fontSize: '13px', fontWeight: 600, textDecoration: 'none',
+                  boxShadow: '0 4px 12px rgba(37,99,235,0.35)',
+                  whiteSpace: 'nowrap', transition: 'transform 0.2s, box-shadow 0.2s',
                 }}
                 onMouseEnter={e => {
                   e.currentTarget.style.transform = 'translateY(-2px)'
-                  e.currentTarget.style.boxShadow = '0 12px 32px rgba(37,99,235,0.55)'
+                  e.currentTarget.style.boxShadow = '0 8px 20px rgba(37,99,235,0.5)'
                 }}
                 onMouseLeave={e => {
                   e.currentTarget.style.transform = 'translateY(0)'
-                  e.currentTarget.style.boxShadow = '0 8px 24px rgba(37,99,235,0.4)'
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(37,99,235,0.35)'
                 }}
               >
                 Start Free Assessment →
               </a>
               <a
-                href="#features"
+                href="/pricing"
                 style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  padding: '10px 20px', borderRadius: '12px', fontSize: '14px', fontWeight: 600,
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
                   background: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(255,255,255,0.15)',
-                  color: 'rgba(255,255,255,0.85)', textDecoration: 'none',
-                  transition: 'background 0.2s',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  color: 'white', padding: '10px 20px', borderRadius: '10px',
+                  fontSize: '13px', fontWeight: 600, textDecoration: 'none',
+                  whiteSpace: 'nowrap', transition: 'background 0.2s',
                 }}
                 onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.14)' }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
               >
-                See how it works
+                View Pricing
               </a>
             </div>
 
@@ -456,41 +500,119 @@ export default function HomePage() {
       <section id="features" className="py-24 bg-white">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold text-gray-900">Everything your practice needs</h2>
+            <h2 className="text-3xl font-bold text-gray-900" style={{ fontFamily: 'Sora, sans-serif' }}>
+              Everything your practice needs
+            </h2>
             <p className="mt-3 text-gray-500 max-w-xl mx-auto">
               Purpose-built for registered investment advisors. Compliance-first, AI-powered, and ready on day one.
             </p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {FEATURES.map(f => {
-              const Icon = f.icon
-              return (
-                <div
-                  key={f.title}
-                  className="p-6 rounded-2xl border border-gray-100"
-                  style={{ transition: 'transform 0.2s, box-shadow 0.2s, border-color 0.2s', cursor: 'pointer' }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.transform = 'translateY(-4px)'
-                    e.currentTarget.style.boxShadow = '0 12px 32px rgba(0,0,0,0.08)'
-                    e.currentTarget.style.borderColor = 'rgba(37,99,235,0.25)'
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.transform = 'translateY(0)'
-                    e.currentTarget.style.boxShadow = 'none'
-                    e.currentTarget.style.borderColor = 'rgb(243,244,246)'
-                  }}
-                >
-                  <div
-                    className="w-11 h-11 rounded-xl flex items-center justify-center mb-4"
-                    style={{ background: f.gradient }}
-                  >
-                    <Icon className="w-5 h-5" style={{ color: f.iconColor }} />
-                  </div>
-                  <h3 className="font-semibold text-gray-900 mb-2">{f.title}</h3>
-                  <p className="text-sm text-gray-500 leading-relaxed">{f.description}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {FEATURES.map(feature => (
+              <div
+                key={feature.title}
+                style={{
+                  background: 'white',
+                  borderRadius: '16px',
+                  padding: '24px',
+                  border: '1px solid #E2E8F0',
+                  transition: 'all 0.25s ease',
+                  cursor: 'default',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.transform = 'translateY(-6px)'
+                  e.currentTarget.style.boxShadow = `0 20px 40px ${feature.shadow}`
+                  e.currentTarget.style.borderColor = 'transparent'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.transform = 'translateY(0)'
+                  e.currentTarget.style.boxShadow = 'none'
+                  e.currentTarget.style.borderColor = '#E2E8F0'
+                }}
+              >
+                <div style={{
+                  width: '52px', height: '52px', borderRadius: '14px',
+                  background: feature.gradient,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '24px', marginBottom: '16px',
+                  boxShadow: `0 8px 16px ${feature.shadow}`,
+                }}>
+                  {feature.icon}
                 </div>
-              )
-            })}
+                <h3 style={{
+                  fontFamily: 'Sora, sans-serif', fontSize: '15px', fontWeight: 700,
+                  color: '#0F172A', marginBottom: '8px',
+                }}>
+                  {feature.title}
+                </h3>
+                <p style={{ fontSize: '13px', color: '#64748B', lineHeight: '1.6' }}>
+                  {feature.desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works */}
+      <section style={{ background: 'white', padding: '80px 24px', borderTop: '1px solid #E2E8F0' }}>
+        <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: '8px',
+              background: '#F0FDF4', border: '1px solid #BBF7D0',
+              borderRadius: '20px', padding: '6px 14px', marginBottom: '16px',
+            }}>
+              <span style={{ color: '#10B981', fontSize: '12px', fontWeight: 600 }}>Simple Process</span>
+            </div>
+            <h2 style={{
+              fontFamily: 'Sora, sans-serif',
+              fontSize: 'clamp(24px, 3vw, 36px)', fontWeight: 800,
+              color: '#0F172A', marginBottom: '12px',
+            }}>
+              How WealthPlanrAI Works
+            </h2>
+            <p style={{ color: '#64748B', fontSize: '15px', maxWidth: '480px', margin: '0 auto' }}>
+              From assessment to advisor connection in minutes — not days
+            </p>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: '24px',
+          }}>
+            {STEPS.map((step, i) => (
+              <div key={step.number} style={{ textAlign: 'center', padding: '16px' }}>
+                <div style={{
+                  width: '72px', height: '72px', borderRadius: '20px',
+                  background: step.bg, border: `2px solid ${step.color}22`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '32px', margin: '0 auto 16px', position: 'relative',
+                  boxShadow: `0 4px 16px ${step.color}22`,
+                }}>
+                  {step.icon}
+                  <div style={{
+                    position: 'absolute', top: '-8px', right: '-8px',
+                    width: '24px', height: '24px', borderRadius: '50%',
+                    background: step.color, color: 'white',
+                    fontSize: '10px', fontWeight: 800,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {i + 1}
+                  </div>
+                </div>
+                <h3 style={{
+                  fontFamily: 'Sora, sans-serif', fontSize: '15px', fontWeight: 700,
+                  color: '#0F172A', marginBottom: '8px',
+                }}>
+                  {step.title}
+                </h3>
+                <p style={{ fontSize: '13px', color: '#64748B', lineHeight: '1.6' }}>
+                  {step.desc}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -511,14 +633,29 @@ export default function HomePage() {
               Every AI response, client report, and generated document automatically includes
               required regulatory disclaimers — reviewed and updated quarterly.
             </p>
+            {/* Trust badges */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '20px' }}>
+              {BADGES.map(b => (
+                <div key={b.label} style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  background: 'rgba(255,255,255,0.1)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '20px', padding: '6px 14px',
+                  fontSize: '12px', fontWeight: 500, color: 'white',
+                }}>
+                  <span>{b.icon}</span>
+                  <span>{b.label}</span>
+                </div>
+              ))}
+            </div>
           </div>
           <a
             href="/pricing"
             style={{
               flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: '8px',
-              padding: '10px 20px', borderRadius: '12px', fontSize: '14px', fontWeight: 700,
+              padding: '10px 20px', borderRadius: '10px', fontSize: '13px', fontWeight: 700,
               background: 'white', color: '#1E3A8A', textDecoration: 'none',
-              transition: 'background 0.2s',
+              whiteSpace: 'nowrap', transition: 'background 0.2s',
             }}
             onMouseEnter={e => { e.currentTarget.style.background = '#EFF6FF' }}
             onMouseLeave={e => { e.currentTarget.style.background = 'white' }}
@@ -574,11 +711,13 @@ export default function HomePage() {
                 </ul>
                 <a
                   href="/pricing"
-                  className="block mt-8 text-center font-semibold text-sm py-2.5 px-6 rounded-xl"
-                  style={plan.highlighted
-                    ? { background: 'white', color: '#1E3A8A', textDecoration: 'none' }
-                    : { background: '#2563EB', color: 'white', textDecoration: 'none' }
-                  }
+                  className="block mt-8 text-center font-semibold text-sm rounded-xl"
+                  style={{
+                    padding: '10px 20px', fontSize: '13px', textDecoration: 'none',
+                    ...(plan.highlighted
+                      ? { background: 'white', color: '#1E3A8A' }
+                      : { background: '#2563EB', color: 'white' }),
+                  }}
                 >
                   {plan.cta}
                 </a>
