@@ -225,13 +225,13 @@ export default async function AssessmentViewPage({
           <div className="max-w-4xl mx-auto">
             <div className="no-print flex items-center gap-3 mb-5">
               <Link
-                href={`/dashboard`}
+                href={`/results?id=${id}`}
                 className="inline-flex items-center gap-2 text-slate-400 hover:text-white text-sm transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
-                Back to Dashboard
+                Back to Results
               </Link>
             </div>
 

@@ -67,39 +67,53 @@ export function AdminClient() {
   const [codes, setCodes] = useState<DiscountCode[]>([])
   const [referrals, setReferrals] = useState<Referral[]>([])
   const [advisors, setAdvisors] = useState<Advisor[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loadingCodes, setLoadingCodes] = useState(true)
   const [error, setError] = useState('')
-
-  const loadData = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const [codesRes, referralsRes, advisorsRes] = await Promise.all([
-        fetch('/api/admin/discount-codes').then(r => r.json()),
-        fetch('/api/admin/referrals').then(r => r.json()),
-        fetch('/api/advisors').then(r => r.json()),
-      ])
-      if (codesRes.error) throw new Error(codesRes.error)
-      if (referralsRes.error) throw new Error(referralsRes.error)
-      setCodes(Array.isArray(codesRes) ? codesRes : [])
-      setReferrals(Array.isArray(referralsRes) ? referralsRes : [])
-      setAdvisors(Array.isArray(advisorsRes) ? advisorsRes : [])
-    } catch (e: any) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => { loadData() }, [loadData])
 
   const fetchCodes = useCallback(async () => {
     try {
-      const res  = await fetch('/api/admin/discount-codes')
-      const json = await res.json()
-      setCodes(Array.isArray(json) ? json : [])
-    } catch { /* non-fatal background refresh */ }
+      setLoadingCodes(true)
+      const res = await fetch('/api/admin/discount-codes', { credentials: 'include' })
+      console.log('[admin] fetch codes status:', res.status)
+      if (!res.ok) {
+        console.error('[admin] fetch codes failed:', await res.text())
+        return
+      }
+      const data = await res.json()
+      console.log('[admin] codes loaded:', data?.length)
+      setCodes(Array.isArray(data) ? data : [])
+    } catch (e: any) {
+      console.error('[admin] fetchCodes error:', e.message)
+    } finally {
+      setLoadingCodes(false)
+    }
   }, [])
+
+  const fetchReferrals = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/referrals', { credentials: 'include' })
+      const data = await res.json()
+      setReferrals(Array.isArray(data) ? data : [])
+    } catch (e: any) {
+      console.error('[admin] fetchReferrals error:', e.message)
+    }
+  }, [])
+
+  const fetchAdvisors = useCallback(async () => {
+    try {
+      const res = await fetch('/api/advisors', { credentials: 'include' })
+      const data = await res.json()
+      setAdvisors(Array.isArray(data) ? data : [])
+    } catch (e: any) {
+      console.error('[admin] fetchAdvisors error:', e.message)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchCodes()
+    fetchReferrals()
+    fetchAdvisors()
+  }, [fetchCodes, fetchReferrals, fetchAdvisors])
 
   const allCommissions = referrals.flatMap(r => r.commissions ?? [])
   const pendingCommissions = allCommissions.filter(c => c.status === 'pending')
@@ -120,76 +134,88 @@ export function AdminClient() {
   ]
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] p-4 sm:p-6">
-      <div className="max-w-6xl mx-auto">
-
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Sora,sans-serif' }}>
-            Admin Panel
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">Manage discount codes, referrals, and commission payouts</p>
+    <div>
+      {/* Sticky page header */}
+      <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-6 h-14 flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <h1 className="text-base font-semibold text-gray-900">Admin Panel</h1>
+          <span className="px-2 py-0.5 bg-rose-100 text-rose-700 text-xs font-semibold rounded-full">
+            Admin Only
+          </span>
         </div>
+        <a
+          href="/dashboard"
+          className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          ← Dashboard
+        </a>
+      </div>
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 flex items-center gap-2 text-red-700 text-sm">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            {error}
-          </div>
-        )}
+      {/* Breadcrumb */}
+      <div className="px-6 py-3 bg-gray-50 border-b border-gray-100 text-xs text-gray-500 flex items-center gap-2">
+        <a href="/dashboard" className="hover:text-blue-600 transition-colors">Dashboard</a>
+        <span>→</span>
+        <span className="text-gray-900 font-medium">Admin Panel</span>
+      </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {[
-            { label: 'Pending Commissions', value: fmt$(pendingTotal), icon: <DollarSign className="w-5 h-5 text-amber-500" />, bg: 'bg-amber-50' },
-            { label: 'Paid This Month',     value: fmt$(paidThisMonth), icon: <Check className="w-5 h-5 text-green-500" />,  bg: 'bg-green-50' },
-            { label: 'Active Referrals',    value: String(activeReferrals), icon: <Users className="w-5 h-5 text-brand-500" />, bg: 'bg-blue-50' },
-            { label: 'Active Codes',        value: String(activeCodes), icon: <Tag className="w-5 h-5 text-purple-500" />,    bg: 'bg-purple-50' },
-          ].map(stat => (
-            <div key={stat.label} className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
-              <div className={`w-9 h-9 ${stat.bg} rounded-xl flex items-center justify-center mb-3`}>
-                {stat.icon}
-              </div>
-              <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{stat.label}</p>
+      <div className="p-4 sm:p-6">
+        <div className="max-w-6xl mx-auto">
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 flex items-center gap-2 text-red-700 text-sm">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              {error}
             </div>
-          ))}
-        </div>
+          )}
 
-        {/* Tabs */}
-        <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 mb-6 w-fit">
-          {TABS.map(t => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                tab === t.key
-                  ? 'bg-brand-600 text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-            >
-              {t.icon}
-              {t.label}
-              {t.key === 'commissions' && pendingCommissions.length > 0 && (
-                <span className="bg-amber-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                  {pendingCommissions.length}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {loading ? (
-          <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center text-gray-400">
-            Loading…
+          {/* Stats */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            {[
+              { label: 'Pending Commissions', value: fmt$(pendingTotal), icon: <DollarSign className="w-5 h-5 text-amber-500" />, bg: 'bg-amber-50' },
+              { label: 'Paid This Month',     value: fmt$(paidThisMonth), icon: <Check className="w-5 h-5 text-green-500" />,  bg: 'bg-green-50' },
+              { label: 'Active Referrals',    value: String(activeReferrals), icon: <Users className="w-5 h-5 text-brand-500" />, bg: 'bg-blue-50' },
+              { label: 'Active Codes',        value: String(activeCodes), icon: <Tag className="w-5 h-5 text-purple-500" />,    bg: 'bg-purple-50' },
+            ].map(stat => (
+              <div key={stat.label} className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+                <div className={`w-9 h-9 ${stat.bg} rounded-xl flex items-center justify-center mb-3`}>
+                  {stat.icon}
+                </div>
+                <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{stat.label}</p>
+              </div>
+            ))}
           </div>
-        ) : (
+
+          {/* Tabs */}
+          <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 mb-6 w-fit">
+            {TABS.map(t => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  tab === t.key
+                    ? 'bg-brand-600 text-white shadow-sm'
+                    : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                {t.icon}
+                {t.label}
+                {t.key === 'commissions' && pendingCommissions.length > 0 && (
+                  <span className="bg-amber-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                    {pendingCommissions.length}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
           <>
-            {tab === 'codes'       && <CodesTab codes={codes} advisors={advisors} onRefresh={fetchCodes} />}
+            {tab === 'codes'       && <CodesTab codes={codes} advisors={advisors} onRefresh={fetchCodes} loadingCodes={loadingCodes} />}
             {tab === 'referrals'   && <ReferralsTab referrals={referrals} />}
-            {tab === 'commissions' && <CommissionsTab referrals={referrals} onRefresh={loadData} />}
+            {tab === 'commissions' && <CommissionsTab referrals={referrals} onRefresh={fetchReferrals} />}
           </>
-        )}
+
+        </div>
       </div>
     </div>
   )
@@ -197,7 +223,14 @@ export function AdminClient() {
 
 // ── TAB 1: Discount Codes ─────────────────────────────────────────────────────
 
-function CodesTab({ codes, advisors, onRefresh }: { codes: DiscountCode[]; advisors: Advisor[]; onRefresh: () => Promise<void> }) {
+function CodesTab({
+  codes, advisors, onRefresh, loadingCodes,
+}: {
+  codes: DiscountCode[]
+  advisors: Advisor[]
+  onRefresh: () => Promise<void>
+  loadingCodes: boolean
+}) {
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
@@ -254,6 +287,7 @@ function CodesTab({ codes, advisors, onRefresh }: { codes: DiscountCode[]; advis
     await fetch('/api/admin/discount-codes', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ id, is_active: !is_active }),
     })
     onRefresh()
@@ -368,8 +402,18 @@ function CodesTab({ codes, advisors, onRefresh }: { codes: DiscountCode[]; advis
       )}
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-        {codes.length === 0 ? (
-          <p className="text-center text-gray-400 text-sm py-12">No discount codes yet. Create one above.</p>
+        {loadingCodes ? (
+          <div className="flex items-center justify-center py-12">
+            <svg className="w-5 h-5 animate-spin text-blue-500" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+            </svg>
+            <span className="ml-2 text-sm text-gray-400">Loading codes...</span>
+          </div>
+        ) : codes.length === 0 ? (
+          <div className="text-center py-12 text-sm text-gray-400">
+            No discount codes yet. Click &quot;+ New Code&quot; to create one.
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -537,7 +581,7 @@ function ReferralsTab({ referrals }: { referrals: Referral[] }) {
 
 // ── TAB 3: Commissions ────────────────────────────────────────────────────────
 
-function CommissionsTab({ referrals, onRefresh }: { referrals: Referral[]; onRefresh: () => void }) {
+function CommissionsTab({ referrals, onRefresh }: { referrals: Referral[]; onRefresh: () => Promise<void> }) {
   const [markingId, setMarkingId] = useState<string | null>(null)
   const [payForm, setPayForm] = useState<{ method: string; reference: string; notes: string }>({ method: 'zelle', reference: '', notes: '' })
   const [saving, setSaving] = useState(false)
@@ -555,6 +599,7 @@ function CommissionsTab({ referrals, onRefresh }: { referrals: Referral[]; onRef
       const res = await fetch('/api/admin/commissions', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ id, status: 'paid', payment_method: payForm.method, payment_reference: payForm.reference || null, notes: payForm.notes || null }),
       })
       if (!res.ok) throw new Error((await res.json()).error)
