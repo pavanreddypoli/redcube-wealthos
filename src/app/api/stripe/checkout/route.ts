@@ -22,6 +22,8 @@ export async function POST(req: NextRequest) {
     }
 
     const { plan } = await req.json() as { plan: string }
+    console.log('Price ID being used:', CONSUMER_PRICE_IDS[plan])
+    console.log('Stripe key type:', process.env.STRIPE_SECRET_KEY?.substring(0, 10))
     const isConsumer = plan.startsWith('consumer_')
     const stripe  = getStripe()
     const appUrl  = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
