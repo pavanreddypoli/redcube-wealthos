@@ -49,6 +49,9 @@ export function Navbar() {
 
         {/* Desktop CTA */}
         <div className="hidden md:flex items-center gap-3">
+          <Link href="/consumer/pricing" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
+            For Individuals
+          </Link>
           <Link href="/auth/login">
             <Button variant="ghost" size="sm">Sign in</Button>
           </Link>
@@ -80,6 +83,13 @@ export function Navbar() {
             </Link>
           ))}
           <div className="pt-2 flex flex-col gap-2">
+            <Link
+              href="/consumer/pricing"
+              onClick={() => setOpen(false)}
+              className="block text-sm text-gray-700 hover:text-brand-600 py-1"
+            >
+              👤 For Individuals
+            </Link>
             <Link href="/auth/login" onClick={() => setOpen(false)}>
               <Button variant="secondary" size="sm" className="w-full">Sign in</Button>
             </Link>

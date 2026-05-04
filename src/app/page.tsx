@@ -400,8 +400,7 @@ export default function HomePage() {
               className="text-lg leading-relaxed max-w-xl mx-auto lg:mx-0 mb-8"
               style={{ color: 'rgba(255,255,255,0.6)' }}
             >
-              WealthPlanrAI combines artificial intelligence with compliance-first financial planning —
-              helping advisors assess clients, identify gaps, and deliver personalized plans in minutes.
+              AI-powered financial planning for modern advisors — and the clients they serve.
             </p>
 
             {/* Stats row */}
@@ -461,6 +460,13 @@ export default function HomePage() {
 
             <p className="mt-4 text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
               No credit card required · 14-day free trial · Cancel anytime
+            </p>
+
+            <p className="mt-3 text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>
+              Planning for yourself?{' '}
+              <a href="/consumer/pricing" style={{ color: '#93C5FD', textDecoration: 'underline' }}>
+                See individual plans →
+              </a>
             </p>
           </div>
 

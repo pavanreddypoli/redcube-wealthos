@@ -47,18 +47,45 @@ export async function POST(request: NextRequest) {
 
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
-        const userId = session.metadata?.userId
-        const plan = session.metadata?.plan
-        const customerId = session.customer as string
+        const userId       = session.metadata?.userId
+        const plan         = session.metadata?.plan
+        const userType     = session.metadata?.userType
+        const customerId   = session.customer as string
         const subscriptionId = session.subscription as string
 
-        console.log('[webhook] Checkout completed:', { userId, plan, customerId })
+        console.log('[webhook] Checkout completed:', { userId, plan, userType, customerId })
 
         if (!userId) {
           console.error('[webhook] checkout.session.completed: no userId in metadata')
           break
         }
 
+        if (userType === 'consumer') {
+          // Claim founding member slot (atomic — returns -1 if no slots left)
+          if (plan === 'consumer_founding') {
+            const { error: rpcErr } = await serviceClient.rpc('claim_founding_member_slot', {
+              user_id: userId,
+            })
+            if (rpcErr) console.error('[webhook] claim_founding_member_slot error:', rpcErr.message)
+          }
+
+          const { error } = await serviceClient
+            .from('profiles')
+            .update({
+              consumer_plan: 'premium',
+              consumer_stripe_customer_id: customerId,
+              consumer_subscription_id:   subscriptionId,
+              consumer_subscription_status: 'active',
+              user_type: 'consumer',
+            })
+            .eq('id', userId)
+
+          if (error) console.error('[webhook] Consumer profile update failed:', error.message)
+          else console.log('[webhook] Consumer profile updated for user:', userId)
+          break
+        }
+
+        // Advisor plan
         let trialEndsAt: string | null = null
         if (subscriptionId) {
           try {
@@ -73,10 +100,10 @@ export async function POST(request: NextRequest) {
           .from('profiles')
           .update({
             plan: plan || 'starter',
-            stripe_customer_id: customerId,
+            stripe_customer_id:    customerId,
             stripe_subscription_id: subscriptionId,
-            subscription_status: 'active',
-            trial_ends_at: trialEndsAt,
+            subscription_status:   'active',
+            trial_ends_at:         trialEndsAt,
           })
           .eq('id', userId)
 

@@ -82,6 +82,32 @@ export default function PricingPage() {
 
       <div className="max-w-6xl mx-auto px-6 py-16">
 
+        {/* Audience toggle */}
+        <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+          <p style={{ fontSize: '14px', color: '#64748B', marginBottom: '12px' }}>
+            Who are you signing up as?
+          </p>
+          <div style={{
+            display: 'inline-flex', background: '#F1F5F9',
+            borderRadius: '12px', padding: '4px', gap: '4px',
+          }}>
+            <a href="/consumer/pricing" style={{
+              padding: '8px 20px', borderRadius: '8px', fontSize: '13px',
+              fontWeight: 600, textDecoration: 'none',
+              background: 'transparent', color: '#64748B',
+            }}>
+              👤 Planning for myself
+            </a>
+            <span style={{
+              padding: '8px 20px', borderRadius: '8px', fontSize: '13px',
+              fontWeight: 600, background: 'white', color: '#2563EB',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+            }}>
+              👨‍💼 I advise clients
+            </span>
+          </div>
+        </div>
+
         {/* Hero */}
         <div className="text-center mb-14">
           <p className="text-brand-600 text-sm font-semibold tracking-widest uppercase mb-3">Pricing</p>
