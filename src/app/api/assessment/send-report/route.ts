@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 import { generateClientPDF, generateAdvisorPDF, generateFormExtractPDF } from '@/lib/generatePDF'
 import { sendClientEmail, sendAdvisorEmail } from '@/lib/email'
 import type { ScoreResults } from '@/lib/scoring'
+import type { IntakeAnalysisOutput } from '@/lib/wealthplanr/intake-analysis-engine'
+import type { ClientEducationalSummary } from '@/lib/wealthplanr/client-view-translator'
 
 function adminClient() {
   return createClient(
@@ -46,7 +48,7 @@ export async function POST(req: NextRequest) {
 
     const { data, error } = await supabase
       .from('assessments')
-      .select('id, full_name, email, risk_profile, score, score_results, answers, created_at, selected_advisor_id')
+      .select('id, full_name, email, risk_profile, score, score_results, answers, created_at, selected_advisor_id, intake_analysis, client_summary, audit_trail')
       .eq('id', assessmentId)
       .single()
 
@@ -84,15 +86,18 @@ export async function POST(req: NextRequest) {
     }
 
     const assessmentForPDF = {
-      clientName:   name,
-      clientEmail:  email,
-      riskProfile:  risk,
-      overallScore: score,
-      scoreResults: sr,
+      clientName:     name,
+      clientEmail:    email,
+      riskProfile:    risk,
+      overallScore:   score,
+      scoreResults:   sr,
       answers,
-      createdAt:    data.created_at as string,
+      createdAt:      data.created_at as string,
       assessmentId,
       advisorName,
+      intakeAnalysis: ((data as Record<string, unknown>).intake_analysis as IntakeAnalysisOutput | null) ?? null,
+      clientSummary:  ((data as Record<string, unknown>).client_summary as ClientEducationalSummary | null) ?? null,
+      auditTrail:     ((data as Record<string, unknown>).audit_trail as { consents?: unknown[]; events?: unknown[] } | null) ?? null,
     }
 
     // Generate PDFs individually — a PDF failure must not prevent emails
@@ -177,7 +182,11 @@ export async function POST(req: NextRequest) {
       console.log('[send-report] 5. sending client email to:', email)
       try {
         if (!clientPDF) throw new Error('client PDF unavailable')
-        await sendClientEmail(email, name, assessmentId, score, risk, pillars, clientPDF, gaps)
+        const topTopics = ((assessmentForPDF.clientSummary as { topicsForAdvisorDiscussion?: Array<{ title: string }> } | null)
+          ?.topicsForAdvisorDiscussion ?? [])
+          .slice(0, 3)
+          .map(t => t.title)
+        await sendClientEmail(email, name, assessmentId, score, risk, pillars, clientPDF, gaps, topTopics)
         console.log('[send-report] 5. client email sent successfully')
         emailsSent++
       } catch (e) {

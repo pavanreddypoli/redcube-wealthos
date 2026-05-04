@@ -4,6 +4,8 @@ import { generateAdvisorPDF } from '@/lib/generatePDF'
 import { sendAdvisorEmail } from '@/lib/email'
 import type { ScoreResults } from '@/lib/scoring'
 import type { PillarScores } from '@/lib/email'
+import type { IntakeAnalysisOutput } from '@/lib/wealthplanr/intake-analysis-engine'
+import type { ClientEducationalSummary } from '@/lib/wealthplanr/client-view-translator'
 
 function adminClient() {
   return createClient(
@@ -58,7 +60,7 @@ export async function PATCH(
 
           const [{ data: assessment }, { data: advisor }] = await Promise.all([
             db.from('assessments')
-              .select('id, full_name, email, risk_profile, score, score_results, answers, created_at')
+              .select('id, full_name, email, risk_profile, score, score_results, answers, created_at, intake_analysis, client_summary, audit_trail')
               .eq('id', id)
               .single(),
             db.from('profiles')
@@ -81,15 +83,18 @@ export async function PATCH(
           const score   = (assessment.score as number) ?? 0
 
           const advisorPDF = await generateAdvisorPDF({
-            clientName:   name,
-            clientEmail:  email,
-            riskProfile:  assessment.risk_profile as string,
-            overallScore: score,
-            scoreResults: sr,
+            clientName:     name,
+            clientEmail:    email,
+            riskProfile:    assessment.risk_profile as string,
+            overallScore:   score,
+            scoreResults:   sr,
             answers,
-            createdAt:    assessment.created_at as string,
-            assessmentId: id,
-            advisorName:  advisor.full_name ?? 'Your Advisor',
+            createdAt:      assessment.created_at as string,
+            assessmentId:   id,
+            advisorName:    advisor.full_name ?? 'Your Advisor',
+            intakeAnalysis: ((assessment as Record<string, unknown>).intake_analysis as IntakeAnalysisOutput | null) ?? null,
+            clientSummary:  ((assessment as Record<string, unknown>).client_summary as ClientEducationalSummary | null) ?? null,
+            auditTrail:     ((assessment as Record<string, unknown>).audit_trail as { consents?: unknown[]; events?: unknown[] } | null) ?? null,
           })
 
           const concerns  = String(answers.biggestConcern ?? '')

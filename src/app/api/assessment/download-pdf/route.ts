@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { generateClientPDF, generateAdvisorPDF, generateFormExtractPDF } from '@/lib/generatePDF'
 import type { ScoreResults } from '@/lib/scoring'
+import type { IntakeAnalysisOutput } from '@/lib/wealthplanr/intake-analysis-engine'
+import type { ClientEducationalSummary } from '@/lib/wealthplanr/client-view-translator'
 
 function adminClient() {
   return createClient(
@@ -21,7 +23,7 @@ export async function GET(request: NextRequest) {
     const supabase = adminClient()
     const { data, error } = await supabase
       .from('assessments')
-      .select('id, full_name, email, risk_profile, score, score_results, answers, created_at')
+      .select('id, full_name, email, risk_profile, score, score_results, answers, created_at, intake_analysis, client_summary, audit_trail')
       .eq('id', id)
       .single()
 
@@ -35,14 +37,17 @@ export async function GET(request: NextRequest) {
     const email   = (data.email as string | null) ?? (answers.email as string | null) ?? null
 
     const assessmentForPDF = {
-      clientName:   name,
-      clientEmail:  email,
-      riskProfile:  data.risk_profile as string,
-      overallScore: (data.score as number) ?? 0,
-      scoreResults: sr,
+      clientName:     name,
+      clientEmail:    email,
+      riskProfile:    data.risk_profile as string,
+      overallScore:   (data.score as number) ?? 0,
+      scoreResults:   sr,
       answers,
-      createdAt:    data.created_at as string,
-      assessmentId: data.id as string,
+      createdAt:      data.created_at as string,
+      assessmentId:   data.id as string,
+      intakeAnalysis: ((data as Record<string, unknown>).intake_analysis as IntakeAnalysisOutput | null) ?? null,
+      clientSummary:  ((data as Record<string, unknown>).client_summary as ClientEducationalSummary | null) ?? null,
+      auditTrail:     ((data as Record<string, unknown>).audit_trail as { consents?: unknown[]; events?: unknown[] } | null) ?? null,
     }
 
     const safeName = name.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_')

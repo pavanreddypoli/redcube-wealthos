@@ -1,4 +1,12 @@
 import type { ScoreResults } from '@/lib/scoring'
+import type { IntakeAnalysisOutput } from './wealthplanr/intake-analysis-engine'
+import type { ClientEducationalSummary } from './wealthplanr/client-view-translator'
+import {
+  CLIENT_PDF_DISCLAIMER,
+  ADVISOR_PDF_DISCLAIMER,
+  PDF_WATERMARK_HEADER,
+  PDF_FOOTER_DISCLAIMER,
+} from './wealthplanr/compliance-module'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -24,6 +32,10 @@ export interface AssessmentForPDF {
   createdAt: string
   assessmentId?: string
   advisorName?: string | null
+  // v2 engine outputs
+  intakeAnalysis?: IntakeAnalysisOutput | null
+  clientSummary?: ClientEducationalSummary | null
+  auditTrail?: { consents?: unknown[]; events?: unknown[] } | null
 }
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
@@ -97,6 +109,42 @@ function getLegacyFindings(a: Record<string, unknown>): string[] {
   if (a.lastReviewedEstate === 'never' || a.lastReviewedEstate === '5yr+')       f.push('Estate plan not reviewed recently')
   if (a.hasEstateAttorney !== 'yes')                                             f.push('No estate attorney on file')
   return f.length ? f.slice(0, 4) : ['Core legacy documents present']
+}
+
+// ── Compliance watermark + footer helper ──────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyWatermarkAndFooter(doc: any, opts: { variant: 'client' | 'advisor' }) {
+  const W   = doc.internal.pageSize.getWidth()
+  const H   = doc.internal.pageSize.getHeight()
+  const n   = doc.getNumberOfPages()
+  const AMBER:  [number, number, number] = [254, 243, 199]  // amber-50
+  const AMBER_T:[number, number, number] = [146, 64, 14]    // amber-800
+  const GRAY:   [number, number, number] = [107, 114, 128]
+  const disclaimer = opts.variant === 'client' ? CLIENT_PDF_DISCLAIMER : ADVISOR_PDF_DISCLAIMER
+
+  for (let i = 1; i <= n; i++) {
+    doc.setPage(i)
+
+    // Amber watermark band (6mm) at top
+    doc.setFillColor(...AMBER)
+    doc.rect(0, 0, W, 6, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(6)
+    doc.setTextColor(...AMBER_T)
+    doc.text(PDF_WATERMARK_HEADER, W / 2, 4, { align: 'center' })
+
+    // Page number footer
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7)
+    doc.setTextColor(...GRAY)
+    doc.text(`Page ${i} of ${n}`, W - 14, H - 4, { align: 'right' })
+
+    // Footer disclaimer (first sentence of PDF_FOOTER_DISCLAIMER)
+    const footerText = PDF_FOOTER_DISCLAIMER.split('. ')[0] + '.'
+    doc.setFontSize(6.5)
+    doc.text(footerText, 14, H - 4, { maxWidth: W - 60 })
+  }
 }
 
 // ── Advisor product recommendation tables ──────────────────────────────────────
@@ -364,23 +412,7 @@ function retirementProjection(a: Record<string, unknown>): string {
   return `Projected balance at age ${retireAge}: ${fmt$(futureValue)} | Target nest egg (4% rule on $${Math.round(goalIncome).toLocaleString()}/yr): ${fmt$(nestedEgg)} | Gap: ${futureValue >= nestedEgg ? 'None — on track' : fmt$(nestedEgg - futureValue) + ' shortfall'}`
 }
 
-// ── FULL REGULATORY DISCLAIMER ────────────────────────────────────────────────
-
-const ADVISOR_DISCLAIMER = `This report is prepared by WealthPlanrAI LLC for use by licensed financial professionals only. It does not constitute a solicitation or offer to buy or sell any security or insurance product. All recommendations are based on self-reported client data and have not been independently verified. Past performance is not indicative of future results. All investments involve risk including possible loss of principal.
-
-Insurance products including life insurance, annuities, IUL, FIA, VUL, and disability insurance are subject to underwriting approval and policy terms. Insurance products are not FDIC insured and are not bank deposits or obligations.
-
-Securities products including mutual funds, ETFs, stocks, and variable products may only be offered by registered representatives of a FINRA member broker-dealer. Fixed insurance products may be offered by licensed insurance agents.
-
-This analysis is for informational purposes only. WealthPlanrAI advisors must conduct their own suitability analysis in accordance with FINRA Rule 2111, SEC Regulation Best Interest, and applicable state regulations before making any product recommendations. All client information must be independently verified.
-
-WealthPlanrAI LLC is not a registered investment advisor or broker-dealer. This report does not establish a fiduciary relationship. Licensed advisors using this report remain solely responsible for all recommendations made to clients.
-
-© WealthPlanrAI LLC. Confidential. For licensed professional use only.`
-
-const CLIENT_DISCLAIMER = `This financial assessment summary is prepared by WealthPlanrAI LLC and is for informational and educational purposes only. It does not constitute investment advice, insurance advice, legal advice, or tax advice. The information provided is based solely on self-reported data and has not been independently verified. Past performance is not indicative of future results. All investment strategies involve risk, including possible loss of principal. Insurance products and annuities involve risks and limitations — please read all product materials carefully before purchasing. WealthPlanrAI advisors may be licensed insurance agents and/or registered investment advisors. This summary does not establish an advisor-client relationship. Please consult with a licensed financial advisor, attorney, and tax professional before making any financial decisions.`
-
-// ── generateClientPDF — 4-page client-friendly summary ────────────────────────
+// ── generateClientPDF — educational client summary (v2) ───────────────────────
 
 export async function generateClientPDF(assessment: AssessmentForPDF): Promise<Buffer> {
   const { jsPDF }  = await import('jspdf')
@@ -394,286 +426,386 @@ export async function generateClientPDF(assessment: AssessmentForPDF): Promise<B
   const DARK: [number, number, number]  = [17, 24, 39]
   const GRAY: [number, number, number]  = [107, 114, 128]
   const LGRAY: [number, number, number] = [229, 231, 235]
+  const AMBER_T: [number, number, number] = [146, 64, 14]
 
-  const a      = assessment.answers
-  const sr     = assessment.scoreResults
-  const date   = new Date(assessment.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-  const pillars = computePillars(sr)
-  const overall = assessment.overallScore
+  const cs   = assessment.clientSummary
+  const date = new Date(assessment.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
 
-  function footer() {
-    const pg = doc.getNumberOfPages()
+  function newPage() { doc.addPage() }
+  const TOP = 16  // top margin below watermark band
+
+  // ── FALLBACK: clientSummary unavailable ──────────────────────────────────────
+  if (!cs) {
+    doc.setFillColor(...NAVY)
+    doc.rect(0, 0, W, 60, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(147, 197, 253)
+    doc.text('WEALTHPLANRAI — EDUCATIONAL SUMMARY', 14, 22)
+    doc.setFontSize(18)
+    doc.setTextColor(255, 255, 255)
+    doc.text('Educational Summary Not Available', 14, 40)
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8)
-    doc.setTextColor(...GRAY)
-    doc.text('WealthPlanrAI — Your Personal Financial Summary', 14, H - 8)
-    doc.text(`Page ${pg} of 4`, W - 14, H - 8, { align: 'right' })
+    doc.setFontSize(10)
+    doc.setTextColor(...DARK)
+    const msg = doc.splitTextToSize(
+      'This assessment was submitted before the educational summary feature was available. ' +
+      'Please contact your advisor or support@wealthplanrai.com to receive an updated summary.',
+      W - 28,
+    ) as string[]
+    doc.text(msg, 14, 80)
+    applyWatermarkAndFooter(doc, { variant: 'client' })
+    return Buffer.from(doc.output('arraybuffer'))
   }
 
-  function newPage() { doc.addPage(); footer() }
+  const firstName = assessment.clientName.split(' ')[0]
+  const overallScore = cs.overallEducationalScore ?? assessment.overallScore
+  const scoreRgb = scoreRGB(overallScore)
 
   // ── PAGE 1: Cover ────────────────────────────────────────────────────────────
 
   doc.setFillColor(...NAVY)
-  doc.rect(0, 0, W, 100, 'F')
+  doc.rect(0, 0, W, 88, 'F')
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(10)
-  doc.setTextColor(191, 219, 254)
+  doc.setTextColor(147, 197, 253)
   doc.text('WEALTHPLANRAI', 14, 22)
 
-  doc.setFontSize(28)
+  doc.setFontSize(20)
   doc.setTextColor(255, 255, 255)
-  doc.text('Your Financial', 14, 42)
-  doc.text('Health Summary', 14, 55)
+  doc.text(cs.reportTitle || 'Educational Financial Summary', 14, 38)
 
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(10)
-  doc.setTextColor(147, 197, 253)
-  doc.text('Confidential — Prepared exclusively for you', 14, 70)
-
   doc.setFontSize(9)
   doc.setTextColor(191, 219, 254)
-  doc.text(`${assessment.clientName}  ·  ${date}`, 14, 85)
-
-  // Pillars tagline
-  doc.setFillColor(30, 58, 138)
-  doc.rect(0, 100, W, 18, 'F')
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(9)
-  doc.setTextColor(147, 197, 253)
-  doc.text('PROTECT   |   GROW   |   LEAVE A LEGACY', W / 2, 111, { align: 'center' })
+  doc.text('Educational summary only — not financial advice', 14, 50)
+  doc.text(`${assessment.clientName}  ·  ${date}`, 14, 60)
 
   // Score circle
   doc.setFillColor(...BLUE)
-  doc.circle(W - 35, 140, 25, 'F')
+  doc.circle(W - 28, 54, 18, 'F')
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(26)
+  doc.setFontSize(20)
   doc.setTextColor(255, 255, 255)
-  doc.text(String(overall), W - 35, 145, { align: 'center' })
-  doc.setFontSize(9)
+  doc.text(String(overallScore), W - 28, 59, { align: 'center' })
+  doc.setFontSize(7.5)
   doc.setFont('helvetica', 'normal')
-  doc.text('/ 100', W - 35, 153, { align: 'center' })
-  doc.setFontSize(8)
-  doc.text('Overall Score', W - 35, 160, { align: 'center' })
+  doc.text('/ 100', W - 28, 66, { align: 'center' })
 
+  // Amber educational notice
+  doc.setFillColor(254, 243, 199)
+  doc.rect(0, 88, W, 10, 'F')
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(13)
-  doc.setTextColor(...DARK)
-  doc.text('Your Financial Health Score', 14, 136)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
-  doc.setTextColor(...GRAY)
-  doc.text('Based on the WealthPlanrAI Three Pillars framework', 14, 143)
-  doc.text('Risk Profile: ' + capWords(assessment.riskProfile), 14, 151)
-  doc.text('Completed: ' + date, 14, 158)
+  doc.setFontSize(7)
+  doc.setTextColor(...AMBER_T)
+  doc.text(
+    'EDUCATIONAL REFERENCE ONLY — NOT FINANCIAL ADVICE — CONSULT A LICENSED PROFESSIONAL',
+    W / 2, 94.5, { align: 'center' },
+  )
 
-  // Intro text
-  doc.setFontSize(10)
-  doc.setTextColor(...DARK)
-  const intro = `Dear ${assessment.clientName.split(' ')[0]},\n\nThank you for completing your WealthPlanrAI financial health assessment. This personalized summary evaluates your financial position across our Three Pillars — PROTECT, GROW, and LEAVE A LEGACY — and provides clear, actionable steps tailored to your situation.\n\nA WealthPlanrAI advisor will reach out within 1 business day to walk through your results and build your plan.`
-  const introLines = doc.splitTextToSize(intro, W - 28) as string[]
-  doc.text(introLines, 14, 175)
-
-  footer()
-
-  // ── PAGE 2: Financial Snapshot ───────────────────────────────────────────────
-
-  newPage()
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(16)
-  doc.setTextColor(...NAVY)
-  doc.text('Your Financial Snapshot', 14, 22)
-
-  doc.setDrawColor(...LGRAY)
-  doc.setLineWidth(0.5)
-  doc.line(14, 25, W - 14, 25)
-
-  const age = getAge(a.dob)
-  const personalRows: [string, string][] = [
-    ['Name',              assessment.clientName],
-    ['Age',               age ? `${age} years old` : String(a.dob ?? '—')],
-    ['State',             String(a.state ?? '—')],
-    ['Marital Status',    capWords(String(a.maritalStatus ?? '—'))],
-    ['Employment Status', capWords(String(a.employmentStatus ?? '—'))],
-    ['Dependents',        String(a.dependents ?? '0')],
-  ]
-
-  autoTable(doc, {
-    startY: 30,
-    head: [['Personal Details', '']],
-    body: personalRows,
-    theme: 'striped',
-    styles: { fontSize: 10, cellPadding: 4 },
-    headStyles: { fillColor: NAVY, textColor: [255, 255, 255], fontStyle: 'bold' },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 65, textColor: GRAY }, 1: { textColor: DARK } },
-    margin: { left: 14, right: 14 },
-  })
-
-  const y1 = (doc as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 80
-
-  const financialRows: [string, string][] = [
-    ['Annual Income',          fmt$(a.grossIncome)],
-    ['Monthly Expenses',       fmt$(a.monthlyExpenses)],
-    ['Monthly Savings',        fmt$(a.monthlySavings)],
-    ['Investable Assets',      fmt$(a.investableAssets)],
-    ['Retirement Savings',     fmt$(a.currentRetirementSavings)],
-    ['Emergency Fund',         `${String(a.emergencyFundMonths ?? '0')} months`],
-  ]
-
-  autoTable(doc, {
-    startY: y1 + 6,
-    head: [['Financial Overview', '']],
-    body: financialRows,
-    theme: 'striped',
-    styles: { fontSize: 10, cellPadding: 4 },
-    headStyles: { fillColor: BLUE, textColor: [255, 255, 255], fontStyle: 'bold' },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 65, textColor: GRAY }, 1: { textColor: DARK } },
-    margin: { left: 14, right: 14 },
-  })
-
-  const y2 = (doc as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 160
-  const overallRGB = scoreRGB(overall)
-
-  doc.setFillColor(248, 250, 252)
-  doc.roundedRect(14, y2 + 8, W - 28, 22, 3, 3, 'F')
+  // Introduction
+  let y = 108
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)
   doc.setTextColor(...DARK)
-  doc.text('Overall Health Score:', 20, y2 + 22)
-  doc.setFontSize(18)
-  doc.setTextColor(...overallRGB)
-  doc.text(`${overall} / 100`, 80, y2 + 22)
-  doc.setFontSize(9)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(...GRAY)
-  doc.text(`(${capWords(assessment.riskProfile)} Investor Profile)`, 120, y2 + 22)
+  doc.text(`Dear ${firstName},`, 14, y)
+  y += 7
 
-  // ── PAGE 3: Three Pillars ────────────────────────────────────────────────────
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9.5)
+  doc.setTextColor(...DARK)
+  const introLines = doc.splitTextToSize(cs.introduction, W - 28) as string[]
+  doc.text(introLines, 14, y)
+  y += introLines.length * 5.2 + 6
+
+  // Score narrative box
+  if (y < H - 40) {
+    doc.setFillColor(239, 246, 255)
+    doc.roundedRect(14, y, W - 28, 22, 3, 3, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(...NAVY)
+    doc.text('Your Educational Readiness Score: ', 20, y + 8)
+    doc.setFontSize(13)
+    doc.setTextColor(...scoreRgb)
+    doc.text(`${overallScore}/100`, 98, y + 8)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8)
+    doc.setTextColor(...GRAY)
+    const scoreNarr = doc.splitTextToSize(cs.scoreDisclaimer, W - 36) as string[]
+    doc.text(scoreNarr, 20, y + 15)
+  }
+
+  // ── PAGE 2: Area Summaries ───────────────────────────────────────────────────
 
   newPage()
+  y = TOP + 4
+
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(16)
+  doc.setFontSize(15)
   doc.setTextColor(...NAVY)
-  doc.text('Three Pillars Assessment', 14, 22)
+  doc.text('Your Financial Area Overview', 14, y)
+  y += 3
   doc.setDrawColor(...LGRAY)
-  doc.line(14, 25, W - 14, 25)
+  doc.line(14, y, W - 14, y)
+  y += 5
 
-  const pillarDefs = [
-    { label: 'PILLAR 1 — PROTECT',        score: pillars.protect, statuses: ['Fully Protected',  'Partially Protected', 'Needs Protection'] as [string,string,string], findings: getProtectFindings(a) },
-    { label: 'PILLAR 2 — GROW',           score: pillars.grow,    statuses: ['Strong Growth',    'Moderate Growth',     'Growth Gap'] as [string,string,string],       findings: getGrowFindings(a) },
-    { label: 'PILLAR 3 — LEAVE A LEGACY', score: pillars.legacy,  statuses: ['Legacy Ready',     'Partial Legacy Plan', 'Legacy Gap'] as [string,string,string],        findings: getLegacyFindings(a) },
-  ]
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8.5)
+  doc.setTextColor(...GRAY)
+  const areaNote = doc.splitTextToSize(
+    'Educational areas represent topics to discuss with a licensed professional. ' +
+    'Scores are reference points based on general planning benchmarks — not advice.',
+    W - 28,
+  ) as string[]
+  doc.text(areaNote, 14, y)
+  y += areaNote.length * 4.8 + 4
 
-  let y3 = 32
-  for (const p of pillarDefs) {
-    const rgb = scoreRGB(p.score)
-    const status = score2status(p.score, p.statuses)
+  const BAND_COLORS: Record<string, [number, number, number]> = {
+    'strong':          [22, 163, 74],
+    'developing':      [59, 130, 246],
+    'needs attention': [245, 158, 11],
+    'priority area':   [239, 68, 68],
+  }
 
-    doc.setFillColor(...NAVY)
-    doc.rect(14, y3, W - 28, 8, 'F')
+  for (const area of (cs.areaSummaries ?? [])) {
+    if (y > H - 50) { newPage(); y = TOP + 4 }
+    const bandColor = BAND_COLORS[area.qualitativeBand] ?? [107, 114, 128]
+    const aScoreRgb = scoreRGB(area.score)
+
+    doc.setFillColor(248, 250, 252)
+    doc.roundedRect(14, y, W - 28, 24, 2, 2, 'F')
+    doc.setFillColor(...bandColor)
+    doc.roundedRect(14, y, 4, 24, 2, 2, 'F')
+
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(10)
-    doc.setTextColor(255, 255, 255)
-    doc.text(p.label, 18, y3 + 5.5)
-
-    // Score
-    doc.setFontSize(24)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(...rgb)
-    doc.text(`${p.score}`, 18, y3 + 22)
-    doc.setFontSize(10)
-    doc.setTextColor(...GRAY)
-    doc.text('/ 100', 30, y3 + 22)
-    doc.setFontSize(10)
-    doc.setFont('helvetica', 'bold')
     doc.setTextColor(...DARK)
-    doc.text(status, 55, y3 + 22)
+    doc.text(area.label, 22, y + 8)
 
-    y3 += 30
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8.5)
+    doc.setTextColor(...GRAY)
+    const noteLines = doc.splitTextToSize(area.educationalNote, W - 80) as string[]
+    doc.text(noteLines, 22, y + 15)
 
-    // Findings — plain English for clients
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(16)
+    doc.setTextColor(...aScoreRgb)
+    doc.text(String(area.score), W - 34, y + 10, { align: 'center' })
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7)
+    doc.setTextColor(...GRAY)
+    doc.text(area.qualitativeBand, W - 34, y + 18, { align: 'center' })
+
+    y += 28
+  }
+
+  // ── PAGE 3: Topics for Advisor Discussion ────────────────────────────────────
+
+  newPage()
+  y = TOP + 4
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(15)
+  doc.setTextColor(...NAVY)
+  doc.text('Topics to Discuss With Your Advisor', 14, y)
+  y += 3
+  doc.setDrawColor(...LGRAY)
+  doc.line(14, y, W - 14, y)
+  y += 6
+
+  const PRIORITY_COLORS: Record<string, [number, number, number]> = {
+    high:   [239, 68, 68],
+    medium: [245, 158, 11],
+    low:    [107, 114, 128],
+  }
+
+  for (const topic of (cs.topicsForAdvisorDiscussion ?? [])) {
+    if (y > H - 60) { newPage(); y = TOP + 4 }
+    const pColor = PRIORITY_COLORS[topic.priorityForDiscussion] ?? [107, 114, 128]
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(...DARK)
+    doc.text(topic.title, 14, y + 5)
+
+    doc.setFillColor(...pColor)
+    doc.roundedRect(W - 34, y + 1, 20, 7, 2, 2, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(6)
+    doc.setTextColor(255, 255, 255)
+    doc.text(topic.priorityForDiscussion.toUpperCase(), W - 24, y + 5.5, { align: 'center' })
+
+    y += 10
+
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(9)
     doc.setTextColor(...DARK)
-    for (const f of p.findings.slice(0, 3)) {
-      if (y3 > H - 40) break
-      const symbol = p.score >= 80 ? '✓' : '→'
-      doc.text(`${symbol}  ${f}`, 18, y3)
-      y3 += 6
-    }
-    y3 += 8
+    const sumLines = doc.splitTextToSize(topic.educationalSummary, W - 28) as string[]
+    doc.text(sumLines, 14, y)
+    y += sumLines.length * 5 + 2
+
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(8.5)
+    doc.setTextColor(...GRAY)
+    const discussLines = doc.splitTextToSize(`Discuss with advisor: ${topic.whatToDiscussWithAdvisor}`, W - 28) as string[]
+    doc.text(discussLines, 14, y)
+    y += discussLines.length * 4.8 + 4
+
+    doc.setDrawColor(...LGRAY)
+    doc.line(14, y, W - 14, y)
+    y += 6
   }
 
-  // ── PAGE 4: Priority Actions + Disclaimer ────────────────────────────────────
+  // ── PAGE 4: Goals + Framework + Next Steps ───────────────────────────────────
 
   newPage()
+  y = TOP + 4
+
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(16)
+  doc.setFontSize(15)
   doc.setTextColor(...NAVY)
-  doc.text('Your Priority Actions', 14, 22)
+  doc.text('Your Goals & Next Steps', 14, y)
+  y += 3
   doc.setDrawColor(...LGRAY)
-  doc.line(14, 25, W - 14, 25)
+  doc.line(14, y, W - 14, y)
+  y += 6
 
-  const topRecs = sr?.recommendations
-    ? [...sr.recommendations]
-        .sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.priority] ?? 2) - ({ high: 0, medium: 1, low: 2 }[b.priority] ?? 2))
-        .slice(0, 5)
-    : []
+  if (cs.goalEducationalSummaries?.length) {
+    const goalRows = cs.goalEducationalSummaries.map(g => [
+      g.goalLabel,
+      String(g.goalYear),
+      g.educationalStatus,
+      g.topicForAdvisor,
+    ])
+    autoTable(doc, {
+      startY: y,
+      head: [['Goal', 'Target Year', 'Status (Educational)', 'Topic for Advisor']],
+      body: goalRows,
+      theme: 'striped',
+      styles: { fontSize: 8, cellPadding: 3 },
+      headStyles: { fillColor: NAVY, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5 },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 40, textColor: DARK },
+        1: { cellWidth: 22, halign: 'center' },
+        2: { cellWidth: 45, textColor: GRAY },
+        3: { textColor: GRAY },
+      },
+      margin: { left: 14, right: 14 },
+    })
+    y = (doc as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y + 60
+    y += 8
+  }
 
-  let y4 = 32
-  if (topRecs.length === 0) {
-    doc.setFont('helvetica', 'italic')
+  const fw = cs.investmentFrameworkReference
+  if (fw && y < H - 60) {
+    doc.setFillColor(239, 246, 255)
+    doc.roundedRect(14, y, W - 28, 46, 3, 3, 'F')
+    doc.setFont('helvetica', 'bold')
     doc.setFontSize(10)
+    doc.setTextColor(...NAVY)
+    doc.text('Educational Investment Framework Reference', 20, y + 8)
+    doc.setFontSize(9)
+    doc.setTextColor(...DARK)
+    doc.text(`Profile: ${fw.educationalProfile}`, 20, y + 16)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8.5)
     doc.setTextColor(...GRAY)
-    doc.text('No specific recommendations generated.', 14, y4)
-    y4 += 12
-  } else {
-    for (let i = 0; i < topRecs.length; i++) {
-      const rec = topRecs[i]
-      doc.setFillColor(37, 99, 235)
-      doc.circle(20, y4 + 1, 4, 'F')
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(10)
-      doc.setTextColor(255, 255, 255)
-      doc.text(String(i + 1), 20, y4 + 2.5, { align: 'center' })
+    const fwLines = doc.splitTextToSize(fw.profileExplanation, W - 40) as string[]
+    doc.text(fwLines, 20, y + 23)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8.5)
+    doc.setTextColor(...DARK)
+    doc.text(fw.illustrativeAllocationRange, 20, y + 40)
+    y += 52
+  }
 
+  if (cs.nextStepsEducational?.length) {
+    if (y > H - 60) { newPage(); y = TOP + 4 }
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(...NAVY)
+    doc.text('Recommended Next Steps', 14, y)
+    y += 7
+
+    for (let i = 0; i < cs.nextStepsEducational.length; i++) {
+      if (y > H - 25) { newPage(); y = TOP + 4 }
+      doc.setFillColor(...BLUE)
+      doc.circle(20, y + 1, 3.5, 'F')
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(9)
+      doc.setTextColor(255, 255, 255)
+      doc.text(String(i + 1), 20, y + 2.5, { align: 'center' })
       doc.setFont('helvetica', 'normal')
-      doc.setFontSize(10)
+      doc.setFontSize(9.5)
       doc.setTextColor(...DARK)
-      const lines = doc.splitTextToSize(rec.message, W - 40) as string[]
-      doc.text(lines, 28, y4 + 2)
-      y4 += lines.length * 5.5 + 6
+      const stepLines = doc.splitTextToSize(cs.nextStepsEducational[i], W - 40) as string[]
+      doc.text(stepLines, 28, y + 2)
+      y += stepLines.length * 5.5 + 4
     }
   }
 
   // CTA
-  y4 += 4
+  y += 4
+  if (y > H - 36) { newPage(); y = TOP + 4 }
   doc.setFillColor(239, 246, 255)
-  doc.roundedRect(14, y4, W - 28, 24, 3, 3, 'F')
+  doc.roundedRect(14, y, W - 28, 20, 3, 3, 'F')
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
+  doc.setFontSize(10)
   doc.setTextColor(...NAVY)
-  doc.text('Next Step: Connect With Your Advisor', W / 2, y4 + 9, { align: 'center' })
+  doc.text('Next Step: Schedule a Conversation With a Licensed Advisor', W / 2, y + 8, { align: 'center' })
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8.5)
+  doc.setTextColor(...GRAY)
+  doc.text('Visit wealthplanrai.com to connect with a qualified financial professional.', W / 2, y + 15, { align: 'center' })
+
+  // ── PAGE 5: Full Disclaimer ──────────────────────────────────────────────────
+
+  newPage()
+  y = TOP + 4
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(13)
+  doc.setTextColor(...DARK)
+  doc.text('Important Disclaimer', 14, y)
+  y += 3
+  doc.setDrawColor(...LGRAY)
+  doc.line(14, y, W - 14, y)
+  y += 7
+
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(...GRAY)
-  doc.text('A WealthPlanrAI advisor will contact you within 1 business day to build your personalized plan.', W / 2, y4 + 17, { align: 'center' })
+  const fullDLines = doc.splitTextToSize(CLIENT_PDF_DISCLAIMER, W - 28) as string[]
+  doc.text(fullDLines, 14, y)
+  y += fullDLines.length * 5.2 + 10
 
-  // Disclaimer
-  y4 += 32
-  doc.setFont('helvetica', 'italic')
-  doc.setFontSize(7.5)
-  doc.setTextColor(156, 163, 175)
-  const dlines = doc.splitTextToSize(CLIENT_DISCLAIMER, W - 28) as string[]
-  doc.text(dlines, 14, y4)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(8.5)
+  doc.setTextColor(...DARK)
+  doc.text('WealthPlanrAI', 14, y)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+  doc.setTextColor(...GRAY)
+  doc.text('support@wealthplanrai.com  ·  www.wealthplanrai.com', 14, y + 6)
+  doc.text(`Report generated: ${date}`, 14, y + 12)
 
+  applyWatermarkAndFooter(doc, { variant: 'client' })
   return Buffer.from(doc.output('arraybuffer'))
 }
 
-// ── generateAdvisorPDF — 8-page professional report ───────────────────────────
+// ── generateAdvisorPDF — dispatches to v2 or legacy ───────────────────────────
 
 export async function generateAdvisorPDF(assessment: AssessmentForPDF): Promise<Buffer> {
+  if (assessment.intakeAnalysis) {
+    return generateV2AdvisorPDF(assessment)
+  }
+  return generateLegacyAdvisorPDF(assessment)
+}
+
+async function generateLegacyAdvisorPDF(assessment: AssessmentForPDF): Promise<Buffer> {
   const { jsPDF } = await import('jspdf')
   const autoTable = (await import('jspdf-autotable')).default
 
@@ -1097,7 +1229,7 @@ export async function generateAdvisorPDF(assessment: AssessmentForPDF): Promise<
   doc.setDrawColor(...LGRAY)
   doc.line(14, 26, W - 14, 26)
 
-  const dlines = doc.splitTextToSize(ADVISOR_DISCLAIMER, W - 28) as string[]
+  const dlines = doc.splitTextToSize(ADVISOR_PDF_DISCLAIMER, W - 28) as string[]
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8.5)
   doc.setTextColor(...GRAY)
@@ -1115,6 +1247,541 @@ export async function generateAdvisorPDF(assessment: AssessmentForPDF): Promise<
   doc.text('www.wealthplanrai.com', 14, endY + 13)
   doc.text(`Report generated: ${date}`, 14, endY + 19)
 
+  applyWatermarkAndFooter(doc, { variant: 'advisor' })
+  return Buffer.from(doc.output('arraybuffer'))
+}
+
+// ── generateV2AdvisorPDF — compliance-ready v2 advisor report ─────────────────
+
+async function generateV2AdvisorPDF(assessment: AssessmentForPDF): Promise<Buffer> {
+  const { jsPDF } = await import('jspdf')
+  const autoTable = (await import('jspdf-autotable')).default
+  const ia        = assessment.intakeAnalysis!
+
+  const doc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const W    = doc.internal.pageSize.getWidth()
+  const H    = doc.internal.pageSize.getHeight()
+  const BLUE: [number, number, number]  = [37, 99, 235]
+  const NAVY: [number, number, number]  = [30, 58, 138]
+  const DARK: [number, number, number]  = [17, 24, 39]
+  const GRAY: [number, number, number]  = [107, 114, 128]
+  const LGRAY: [number, number, number] = [229, 231, 235]
+  const RED:  [number, number, number]  = [239, 68, 68]
+  const AMBER:[number, number, number]  = [245, 158, 11]
+
+  const date = new Date(assessment.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+  const TOP  = 16
+
+  function newPage() { doc.addPage() }
+
+  function sectionHdr(text: string, y: number): number {
+    doc.setFillColor(...BLUE)
+    doc.rect(14, y, W - 28, 8, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(9)
+    doc.setTextColor(255, 255, 255)
+    doc.text(text.toUpperCase(), 18, y + 5.5)
+    return y + 12
+  }
+
+  function caveatBox(y: number): number {
+    doc.setFillColor(254, 243, 199)
+    doc.roundedRect(14, y, W - 28, 14, 2, 2, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7)
+    doc.setTextColor(146, 64, 14)
+    doc.text(
+      'FRAMEWORK ALIGNMENT ONLY — Products listed represent Series 65 framework alignment, NOT recommendations from WealthPlanrAI. ' +
+      'Licensed advisor is solely responsible for suitability, fiduciary obligations, and all client recommendations.',
+      20, y + 5, { maxWidth: W - 40 },
+    )
+    return y + 18
+  }
+
+  // ── PAGE 1: Cover ─────────────────────────────────────────────────────────────
+
+  doc.setFillColor(...NAVY)
+  doc.rect(0, 0, W, 90, 'F')
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(10)
+  doc.setTextColor(147, 197, 253)
+  doc.text('WEALTHPLANRAI — ADVISOR INTAKE INTELLIGENCE REPORT', 14, 20)
+
+  doc.setFontSize(20)
+  doc.setTextColor(255, 255, 255)
+  doc.text('Client Intake Intelligence Report', 14, 38)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.setTextColor(191, 219, 254)
+  doc.text('For licensed financial professional use only', 14, 52)
+  doc.text(`Assessment Date: ${date}`, 14, 60)
+  if (assessment.assessmentId) doc.text(`Assessment ID: ${assessment.assessmentId}`, 14, 68)
+  if (assessment.advisorName)  doc.text(`Prepared for: ${assessment.advisorName}`, 14, 76)
+
+  // Client card
+  const overallScore = ia.overallScore ?? assessment.overallScore
+  doc.setFillColor(248, 250, 252)
+  doc.roundedRect(14, 98, W - 28, 54, 4, 4, 'F')
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(16)
+  doc.setTextColor(...DARK)
+  doc.text(assessment.clientName, 22, 114)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9.5)
+  doc.setTextColor(...GRAY)
+  doc.text(`Email: ${assessment.clientEmail ?? '—'}`, 22, 124)
+  doc.text(`Risk Profile: ${capWords(assessment.riskProfile)}`, 22, 133)
+  doc.text(`Framework Objective: ${capWords(ia.frameworkObjective.replace(/_/g, ' '))}`, 22, 142)
+
+  doc.setFillColor(...BLUE)
+  doc.circle(W - 32, 128, 20, 'F')
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(22)
+  doc.setTextColor(255, 255, 255)
+  doc.text(String(overallScore), W - 32, 133, { align: 'center' })
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'normal')
+  doc.text('/ 100', W - 32, 140, { align: 'center' })
+
+  // ADVISOR_PDF_DISCLAIMER block on cover
+  let y = 162
+  doc.setFillColor(249, 250, 251)
+  const discLines = doc.splitTextToSize(ADVISOR_PDF_DISCLAIMER, W - 28) as string[]
+  const discHeight = discLines.length * 4 + 10
+  doc.roundedRect(14, y, W - 28, discHeight, 2, 2, 'F')
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(7)
+  doc.setTextColor(...GRAY)
+  doc.text(discLines, 20, y + 6)
+
+  // ── PAGE 2: Framework Classification ─────────────────────────────────────────
+
+  newPage()
+  y = TOP + 4
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(15)
+  doc.setTextColor(...NAVY)
+  doc.text('Framework Classification', 14, y)
+  y += 3
+  doc.setDrawColor(...LGRAY)
+  doc.line(14, y, W - 14, y)
+  y += 6
+
+  y = sectionHdr('Investment Objective Analysis', y)
+
+  const classRows: [string, string][] = [
+    ['Stated Objective (client-reported)',   capWords(ia.statedObjective.replace(/_/g, ' '))],
+    ['Risk Capacity Ceiling (computed)',     capWords(ia.riskCapacityCeiling.replace(/_/g, ' '))],
+    ['Framework Objective (final)',          capWords(ia.frameworkObjective.replace(/_/g, ' '))],
+    ['Classification Rationale',            ia.classificationRationale],
+    ['Bond Strategy',                       `${capWords(ia.bondStrategy)} — ${ia.bondStrategyRationale}`],
+    ['Management Style',                    `${capWords(ia.managementStyle.replace(/_/g, '-'))} — ${ia.managementStyleRationale}`],
+  ]
+
+  autoTable(doc, {
+    startY: y, body: classRows, theme: 'striped',
+    styles: { fontSize: 9, cellPadding: 3.5 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 62, textColor: GRAY }, 1: { textColor: DARK } },
+    margin: { left: 14, right: 14 },
+  })
+
+  y = (doc as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y + 60
+  y += 8
+
+  y = sectionHdr('Framework Allocation (Series 65 Reference)', y)
+
+  const alloc = ia.frameworkAllocation
+  const allocRows: [string, string][] = [
+    ['Equity (total)',      `${alloc.equity}%`],
+    ['  — Large Cap Dom.',  `${alloc.equityBreakdown.largeCapDomestic}% of equity`],
+    ['  — International',  `${alloc.equityBreakdown.international}% of equity`],
+    ['Fixed Income',        `${alloc.fixedIncome}%`],
+    ['  — Treasuries',     `${alloc.fixedIncomeBreakdown.treasuries}% of FI`],
+    ['  — IG Corporate',   `${alloc.fixedIncomeBreakdown.investmentGradeCorporate}% of FI`],
+    ['Alternatives',        `${alloc.alternatives}%`],
+    ['Cash',               `${alloc.cash}%`],
+  ]
+
+  autoTable(doc, {
+    startY: y, body: allocRows, theme: 'striped',
+    styles: { fontSize: 9, cellPadding: 3.5 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 62, textColor: GRAY }, 1: { textColor: DARK } },
+    margin: { left: 14, right: 14 },
+  })
+
+  y = (doc as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y + 60
+  y += 8
+
+  if (ia.allocationAdjustments?.length) {
+    y = sectionHdr('Allocation Adjustment Reasons', y)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.setTextColor(...DARK)
+    for (const adj of ia.allocationAdjustments) {
+      if (y > H - 20) { newPage(); y = TOP + 4 }
+      doc.text(`• ${adj}`, 18, y)
+      y += 6
+    }
+  }
+
+  // ── PAGE 3: Aligned Products ──────────────────────────────────────────────────
+
+  newPage()
+  y = TOP + 4
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(15)
+  doc.setTextColor(...NAVY)
+  doc.text('Framework-Aligned Products', 14, y)
+  y += 3
+  doc.setDrawColor(...LGRAY)
+  doc.line(14, y, W - 14, y)
+  y += 5
+
+  y = caveatBox(y)
+
+  const alignedRows = (ia.alignedProducts ?? [])
+    .filter(p => p.status !== 'excluded')
+    .map(p => [
+      p.product,
+      capWords(p.category),
+      capWords(p.status.replace(/_/g, ' ')),
+      capWords(p.priority),
+      p.rationale,
+    ])
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Product', 'Category', 'Status', 'Priority', 'Rationale']],
+    body: alignedRows,
+    theme: 'grid',
+    styles: { fontSize: 7.5, cellPadding: 2.5, lineColor: LGRAY, lineWidth: 0.2 },
+    headStyles: { fillColor: NAVY, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 38, textColor: DARK },
+      1: { cellWidth: 22, halign: 'center' },
+      2: { cellWidth: 22, halign: 'center', textColor: DARK },
+      3: { cellWidth: 18, halign: 'center' },
+      4: { textColor: GRAY },
+    },
+    margin: { left: 14, right: 14 },
+  })
+
+  // ── PAGE 4: Considered-But-Excluded ──────────────────────────────────────────
+
+  newPage()
+  y = TOP + 4
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(15)
+  doc.setTextColor(...NAVY)
+  doc.text('Considered-But-Excluded Products', 14, y)
+  y += 3
+  doc.setDrawColor(...LGRAY)
+  doc.line(14, y, W - 14, y)
+  y += 5
+
+  y = caveatBox(y)
+
+  const excludedRows = (ia.consideredButExcludedProducts ?? []).map(p => [
+    p.product,
+    capWords(p.category),
+    p.excludedReason ?? p.rationale,
+    p.clientDataPointsUsed?.join(', ') ?? '—',
+  ])
+
+  if (excludedRows.length === 0) {
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(9.5)
+    doc.setTextColor(...GRAY)
+    doc.text('No products were excluded from consideration.', 14, y)
+  } else {
+    autoTable(doc, {
+      startY: y,
+      head: [['Product', 'Category', 'Exclusion Reason', 'Client Data Points']],
+      body: excludedRows,
+      theme: 'grid',
+      styles: { fontSize: 7.5, cellPadding: 2.5, lineColor: LGRAY, lineWidth: 0.2 },
+      headStyles: { fillColor: [127, 29, 29], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 38, textColor: DARK },
+        1: { cellWidth: 22, halign: 'center' },
+        2: { textColor: GRAY },
+        3: { cellWidth: 38, textColor: GRAY, fontSize: 7 },
+      },
+      margin: { left: 14, right: 14 },
+    })
+  }
+
+  // ── PAGE 5: Per-Goal Allocations ─────────────────────────────────────────────
+
+  newPage()
+  y = TOP + 4
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(15)
+  doc.setTextColor(...NAVY)
+  doc.text('Per-Goal Allocations', 14, y)
+  y += 3
+  doc.setDrawColor(...LGRAY)
+  doc.line(14, y, W - 14, y)
+  y += 6
+
+  if (!ia.perGoalAllocations?.length) {
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(9.5)
+    doc.setTextColor(...GRAY)
+    doc.text('No goal allocations available.', 14, y)
+  } else {
+    for (const ga of ia.perGoalAllocations) {
+      if (y > H - 70) { newPage(); y = TOP + 4 }
+
+      const statusColor: Record<string, [number, number, number]> = {
+        on_track:   [22, 163, 74],
+        behind:     [245, 158, 11],
+        critical:   [239, 68, 68],
+        overfunded: [59, 130, 246],
+        unknown:    [107, 114, 128],
+      }
+      const sColor = statusColor[ga.fundingStatus] ?? [107, 114, 128]
+
+      doc.setFillColor(248, 250, 252)
+      doc.roundedRect(14, y, W - 28, 8, 2, 2, 'F')
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(10)
+      doc.setTextColor(...DARK)
+      doc.text(`${capWords(ga.goal.type.replace(/_/g, ' '))} — Target: ${ga.goal.targetYear}`, 18, y + 5.5)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(8)
+      doc.setTextColor(...sColor)
+      doc.text(capWords(ga.fundingStatus.replace(/_/g, ' ')), W - 30, y + 5.5, { align: 'right' })
+      y += 12
+
+      const goalRows: [string, string][] = [
+        ['Years to Goal',     String(ga.yearsToGoal)],
+        ['Time Bucket',       capWords(ga.bucket.replace(/_/g, '-'))],
+        ['Equity %',          `${ga.alignedAllocation.equity}%`],
+        ['Fixed Income %',    `${ga.alignedAllocation.fixedIncome}%`],
+        ['Cash %',            `${ga.alignedAllocation.cash}%`],
+        ['Alternatives %',    `${ga.alignedAllocation.alternatives}%`],
+        ['Funding Gap',       ga.fundingGap ? `$${Math.round(ga.fundingGap).toLocaleString()}` : '—'],
+        ['Indicative Monthly Contribution', ga.indicativeMonthlyContribution ? `$${Math.round(ga.indicativeMonthlyContribution).toLocaleString()}/mo` : '—'],
+      ]
+
+      autoTable(doc, {
+        startY: y, body: goalRows, theme: 'striped',
+        styles: { fontSize: 8.5, cellPadding: 2.5 },
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 60, textColor: GRAY }, 1: { textColor: DARK } },
+        margin: { left: 14, right: 14 },
+      })
+
+      y = (doc as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y + 50
+      y += 8
+    }
+  }
+
+  // ── PAGE 6: Strategy + Tax Considerations ────────────────────────────────────
+
+  newPage()
+  y = TOP + 4
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(15)
+  doc.setTextColor(...NAVY)
+  doc.text('Strategy & Tax Considerations', 14, y)
+  y += 3
+  doc.setDrawColor(...LGRAY)
+  doc.line(14, y, W - 14, y)
+  y += 6
+
+  y = sectionHdr(`Bond Strategy: ${capWords(ia.bondStrategy)} | Management: ${capWords(ia.managementStyle.replace(/_/g, '-'))}`, y)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.setTextColor(...DARK)
+  doc.text(`Bond rationale: ${ia.bondStrategyRationale}`, 18, y, { maxWidth: W - 36 })
+  y += 12
+  doc.text(`Management rationale: ${ia.managementStyleRationale}`, 18, y, { maxWidth: W - 36 })
+  y += 16
+
+  y = sectionHdr('Tax Considerations', y)
+
+  if (!ia.taxConsiderations?.length) {
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(9.5)
+    doc.setTextColor(...GRAY)
+    doc.text('No specific tax considerations identified.', 18, y)
+    y += 10
+  } else {
+    const taxRows = ia.taxConsiderations.map(t => [
+      capWords(t.topic.replace(/_/g, ' ')),
+      t.message,
+      t.estimatedAnnualBenefit ? `~$${Math.round(t.estimatedAnnualBenefit).toLocaleString()}/yr` : '—',
+    ])
+    autoTable(doc, {
+      startY: y,
+      head: [['Topic', 'Analysis', 'Est. Annual Benefit']],
+      body: taxRows,
+      theme: 'striped',
+      styles: { fontSize: 8.5, cellPadding: 3 },
+      headStyles: { fillColor: NAVY, textColor: [255, 255, 255], fontStyle: 'bold' },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 42, textColor: DARK },
+        1: { textColor: GRAY },
+        2: { cellWidth: 36, halign: 'right', textColor: DARK },
+      },
+      margin: { left: 14, right: 14 },
+    })
+    y = (doc as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y + 60
+    y += 8
+  }
+
+  // Sub-scores
+  y = sectionHdr('Planning Sub-Scores', y)
+  const subScoreRows = Object.entries(ia.subScores ?? {}).map(([k, v]) => [
+    capWords(k),
+    `${v}/100`,
+  ]) as [string, string][]
+
+  autoTable(doc, {
+    startY: y, body: subScoreRows, theme: 'striped',
+    styles: { fontSize: 9, cellPadding: 3 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, textColor: GRAY }, 1: { textColor: DARK } },
+    margin: { left: 14, right: 14 },
+  })
+
+  // ── PAGE 7: Planning Flags ────────────────────────────────────────────────────
+
+  newPage()
+  y = TOP + 4
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(15)
+  doc.setTextColor(...NAVY)
+  doc.text('Planning Flags', 14, y)
+  y += 3
+  doc.setDrawColor(...LGRAY)
+  doc.line(14, y, W - 14, y)
+  y += 6
+
+  if (!ia.planningFlags?.length) {
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(9.5)
+    doc.setTextColor(...GRAY)
+    doc.text('No planning flags raised.', 14, y)
+  } else {
+    for (const flag of ia.planningFlags) {
+      if (y > H - 50) { newPage(); y = TOP + 4 }
+
+      const fColor: Record<string, [number, number, number]> = {
+        critical: [127, 29, 29],
+        high:     [239, 68, 68],
+        medium:   [245, 158, 11],
+        low:      [107, 114, 128],
+      }
+      const fc = fColor[flag.severity] ?? [107, 114, 128]
+
+      doc.setFillColor(...fc)
+      doc.roundedRect(14, y, 18, 7, 2, 2, 'F')
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(6.5)
+      doc.setTextColor(255, 255, 255)
+      doc.text(flag.severity.toUpperCase(), 23, y + 4.8, { align: 'center' })
+
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(9.5)
+      doc.setTextColor(...DARK)
+      doc.text(`${capWords(flag.category.replace(/_/g, ' '))}: ${flag.message}`, 36, y + 5, { maxWidth: W - 50 })
+      y += 10
+
+      doc.setFont('helvetica', 'italic')
+      doc.setFontSize(8.5)
+      doc.setTextColor(...GRAY)
+      const discLines = doc.splitTextToSize(`Advisor discussion: ${flag.advisorDiscussionTopic}`, W - 30) as string[]
+      doc.text(discLines, 18, y)
+      y += discLines.length * 4.8 + 4
+
+      doc.setDrawColor(...LGRAY)
+      doc.line(14, y, W - 14, y)
+      y += 5
+    }
+  }
+
+  // ── PAGE 8: Compliance Trail ──────────────────────────────────────────────────
+
+  newPage()
+  y = TOP + 4
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(15)
+  doc.setTextColor(...NAVY)
+  doc.text('Compliance Trail', 14, y)
+  y += 3
+  doc.setDrawColor(...LGRAY)
+  doc.line(14, y, W - 14, y)
+  y += 6
+
+  y = sectionHdr('Compliance Notes', y)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8.5)
+  doc.setTextColor(...DARK)
+  for (const note of (ia.complianceNotes ?? [])) {
+    if (y > H - 20) { newPage(); y = TOP + 4 }
+    doc.text(`• ${note}`, 18, y, { maxWidth: W - 36 })
+    y += 6
+  }
+  y += 4
+
+  // Audit trail events
+  const trail = assessment.auditTrail
+  if (trail?.events?.length) {
+    y = sectionHdr('Audit Trail Events', y)
+    const eventRows = (trail.events as Array<{ type: string; at: string; metadata?: unknown }>).map(e => [
+      String(e.type ?? ''),
+      String(e.at ?? ''),
+      e.metadata ? JSON.stringify(e.metadata) : '',
+    ])
+    autoTable(doc, {
+      startY: y,
+      head: [['Event Type', 'Timestamp', 'Metadata']],
+      body: eventRows,
+      theme: 'striped',
+      styles: { fontSize: 8, cellPadding: 2.5 },
+      headStyles: { fillColor: NAVY, textColor: [255, 255, 255], fontStyle: 'bold' },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 40, textColor: DARK },
+        1: { cellWidth: 50, textColor: GRAY },
+        2: { textColor: GRAY, fontSize: 7 },
+      },
+      margin: { left: 14, right: 14 },
+    })
+    y = (doc as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y + 50
+    y += 8
+  }
+
+  // Full disclaimer
+  y = sectionHdr('Full Regulatory Disclaimer', y)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+  doc.setTextColor(...GRAY)
+  const fullAdvDisc = doc.splitTextToSize(ADVISOR_PDF_DISCLAIMER, W - 28) as string[]
+  if (y + fullAdvDisc.length * 4.2 > H - 20) { newPage(); y = TOP + 4 }
+  doc.text(fullAdvDisc, 14, y)
+  y += fullAdvDisc.length * 4.2 + 10
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9)
+  doc.setTextColor(...DARK)
+  doc.text('WealthPlanrAI LLC', 14, y)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8.5)
+  doc.setTextColor(...GRAY)
+  doc.text('support@wealthplanrai.com  ·  www.wealthplanrai.com', 14, y + 6)
+  doc.text(`Report generated: ${date}`, 14, y + 12)
+
+  applyWatermarkAndFooter(doc, { variant: 'advisor' })
   return Buffer.from(doc.output('arraybuffer'))
 }
 

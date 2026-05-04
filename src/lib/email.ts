@@ -1,4 +1,5 @@
 import type { ScoreResults } from '@/lib/scoring'
+import { CLIENT_PDF_DISCLAIMER, ADVISOR_PDF_DISCLAIMER } from './wealthplanr/compliance-module'
 
 export interface PillarScores {
   protect: number
@@ -83,10 +84,6 @@ function ctaButton(href: string, label: string): string {
   </div>`
 }
 
-const CLIENT_DISCLAIMER = `This summary is for informational purposes only and does not constitute investment, tax, legal, or insurance advice. Based on self-reported data. Consult a licensed financial professional before making financial decisions. WealthPlanrAI LLC.`
-
-const ADVISOR_DISCLAIMER = `This report is for licensed financial professionals only. Does not constitute a solicitation or offer to buy or sell any security or insurance product. All recommendations based on self-reported client data. Advisors must conduct independent suitability analysis per FINRA Rule 2111 and SEC Reg BI. WealthPlanrAI LLC is not a registered investment advisor or broker-dealer. © WealthPlanrAI LLC — Confidential.`
-
 // ── FUNCTION 1: sendClientEmail ───────────────────────────────────────────────
 
 export async function sendClientEmail(
@@ -98,6 +95,7 @@ export async function sendClientEmail(
   pillars: PillarScores,
   clientPDFBuffer: Buffer,
   topGaps?: string[],
+  topTopics?: string[],
 ): Promise<void> {
   const sgMail    = getSgMail()
   const safe      = safeFilename(clientName)
@@ -119,10 +117,13 @@ export async function sendClientEmail(
     return `<span style="display:inline-block;width:${Math.round(score * 0.65)}px;height:7px;background:${color};border-radius:4px;vertical-align:middle;margin-right:6px;"></span><span style="font-size:13px;">${score}/100</span>`
   }
 
-  const gapSection = topGaps && topGaps.length > 0 ? `
-    <h3 style="font-size:12px;font-weight:700;color:#6b7280;letter-spacing:2px;text-transform:uppercase;margin:24px 0 10px;">Key Areas To Address</h3>
+  // Prefer topTopics (educational language) over topGaps; fall back to topGaps for legacy assessments
+  const displayItems = (topTopics && topTopics.length > 0) ? topTopics : (topGaps ?? [])
+  const itemsHeading = (topTopics && topTopics.length > 0) ? 'Topics to Discuss with Your Advisor' : 'Key Areas To Address'
+  const gapSection = displayItems.length > 0 ? `
+    <h3 style="font-size:12px;font-weight:700;color:#6b7280;letter-spacing:2px;text-transform:uppercase;margin:24px 0 10px;">${itemsHeading}</h3>
     <ul style="margin:0;padding:0 0 0 18px;">
-      ${topGaps.slice(0, 3).map(g => `<li style="padding:5px 0;font-size:13px;color:#374151;line-height:1.6;">${g}</li>`).join('')}
+      ${displayItems.slice(0, 3).map(g => `<li style="padding:5px 0;font-size:13px;color:#374151;line-height:1.6;">${g}</li>`).join('')}
     </ul>` : ''
 
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/></head>
@@ -174,7 +175,7 @@ export async function sendClientEmail(
       <p style="margin:4px 0 0;font-size:12px;color:#6b7280;">info@wealthplanrai.com</p>
     </div>
   </div>
-  ${emailFooter(CLIENT_DISCLAIMER)}
+  ${emailFooter(CLIENT_PDF_DISCLAIMER)}
 </div>
 </body></html>`
 
@@ -234,7 +235,7 @@ export async function sendInfoEmail(
 
     ${ctaButton(`${appUrl()}/dashboard`, 'View in Dashboard')}
   </div>
-  ${emailFooter(ADVISOR_DISCLAIMER)}
+  ${emailFooter(ADVISOR_PDF_DISCLAIMER)}
 </div>
 </body></html>`
 
@@ -388,7 +389,7 @@ export async function sendAdvisorEmail(
 
     ${ctaButton(`${appUrl()}/assessment/view?id=${assessmentId}`, 'View Full Assessment')}
   </div>
-  ${emailFooter(ADVISOR_DISCLAIMER)}
+  ${emailFooter(ADVISOR_PDF_DISCLAIMER)}
 </div>
 </body></html>`
 
