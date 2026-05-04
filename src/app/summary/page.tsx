@@ -1,206 +1,658 @@
+import { Suspense } from 'react'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { Shield, TrendingUp, Heart, ArrowRight, CheckCircle, AlertCircle } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
-import type { ScoreResults } from '@/lib/scoring'
+import { ScoreRing } from '../results/ScoreRing'
+import { RISK_LABELS, formatDate } from '@/lib/utils'
+import {
+  AlertTriangle, ArrowRight, Calendar, Info, RefreshCw, User,
+} from 'lucide-react'
+import type { RiskProfile } from '@/types'
+import type { ScoreResults, Recommendation } from '@/lib/scoring'
+import type {
+  ClientEducationalSummary,
+  ClientPlanningTopic,
+  ClientGoalSummary,
+} from '@/lib/wealthplanr/client-view-translator'
 import { DownloadButton } from './DownloadButton'
 import { AdvisorSelector } from './AdvisorSelector'
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-interface AssessmentData {
+interface AssessmentRow {
   id: string
   full_name: string | null
   email: string | null
   risk_profile: string
   score: number
   score_results: ScoreResults | null
+  client_summary: ClientEducationalSummary | null
   answers: Record<string, unknown> | null
   created_at: string
+  selected_advisor_id: string | null
 }
 
-interface PillarData {
-  key: string
-  name: string
-  score: number
-  statusLabel: string
-  findings: string[]
-  icon: React.ReactNode
-  accent: string       // text color
-  bgAccent: string     // icon bg color
-  borderAccent: string // card left border
+// ── Lookup tables (shared by both views) ──────────────────────────────────────
+
+const SUB_META: Record<string, { label: string; icon: string; explanation: string }> = {
+  cashflow:    { label: 'Cash Flow',   icon: '💵', explanation: 'Strong cash flow is the foundation of every financial plan.' },
+  retirement:  { label: 'Retirement',  icon: '🏖️', explanation: 'Retirement savings compound over time — every year matters.' },
+  insurance:   { label: 'Insurance',   icon: '🛡️', explanation: 'Insurance protects your wealth from unexpected events.' },
+  tax:         { label: 'Tax',         icon: '🧾', explanation: 'Tax efficiency can add hundreds of thousands over a lifetime.' },
+  estate:      { label: 'Estate',      icon: '📋', explanation: 'Estate planning ensures your wishes are carried out.' },
+  investments: { label: 'Investments', icon: '📈', explanation: 'A clear investment strategy grows your wealth systematically.' },
 }
 
-interface ProductRec {
-  icon: string
-  title: string
-  explanation: string
-  priority: 'High' | 'Medium' | 'Low'
+const AREA_ICON: Record<ClientPlanningTopic['area'], string> = {
+  cash_flow:   '💵',
+  retirement:  '🏖️',
+  protection:  '🛡️',
+  tax:         '🧾',
+  estate:      '📋',
+  investments: '📈',
+  goals:       '🎯',
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-function n(val: unknown): number {
-  return parseFloat(String(val ?? '0')) || 0
+const RISK_BADGE: Record<string, string> = {
+  conservative:    'bg-blue-100 text-blue-700 border border-blue-200',
+  moderate:        'bg-amber-100 text-amber-700 border border-amber-200',
+  aggressive:      'bg-orange-100 text-orange-700 border border-orange-200',
+  very_aggressive: 'bg-red-100 text-red-700 border border-red-200',
 }
 
-function clamp(v: number): number {
-  return Math.max(0, Math.min(100, Math.round(v)))
+const PRIORITY_CONFIG = {
+  high:   { label: 'High',   badge: 'bg-red-100 text-red-700',     header: 'bg-red-50 border-red-200',     border: 'border-red-200'   },
+  medium: { label: 'Medium', badge: 'bg-amber-100 text-amber-700', header: 'bg-amber-50 border-amber-200', border: 'border-amber-200' },
+  low:    { label: 'Low',    badge: 'bg-slate-100 text-slate-600', header: 'bg-slate-50 border-slate-200', border: 'border-slate-200' },
+} as const
+
+const BAND_CONFIG: Record<string, { pill: string }> = {
+  'strong':          { pill: 'bg-green-100 text-green-700' },
+  'developing':      { pill: 'bg-blue-100 text-blue-700' },
+  'needs attention': { pill: 'bg-amber-100 text-amber-700' },
+  'priority area':   { pill: 'bg-red-100 text-red-700' },
 }
 
-function pillarStatus(score: number, labels: [string, string, string]): string {
-  if (score >= 80) return labels[0]
-  if (score >= 50) return labels[1]
-  return labels[2]
+const GOAL_STATUS_CLS: Record<ClientGoalSummary['educationalStatus'], string> = {
+  'on a positive track':             'bg-green-100 text-green-700',
+  'progressing':                     'bg-blue-100 text-blue-700',
+  'may need attention':              'bg-amber-100 text-amber-700',
+  'priority for advisor discussion': 'bg-red-100 text-red-700',
+  'no progress data provided':       'bg-slate-100 text-slate-600',
 }
 
-function pillarStatusBadge(score: number): string {
-  if (score >= 80) return 'bg-green-100 text-green-700 border border-green-200'
-  if (score >= 50) return 'bg-amber-100 text-amber-700 border border-amber-200'
-  return 'bg-red-100 text-red-700 border border-red-200'
+// ── Score helpers ─────────────────────────────────────────────────────────────
+
+function scoreColor(s: number): string {
+  return s >= 75 ? '#2563eb' : s >= 50 ? '#f59e0b' : '#ef4444'
 }
 
-function scoreBarColor(score: number): string {
-  if (score >= 80) return 'bg-green-500'
-  if (score >= 50) return 'bg-amber-400'
+function scoreLabel(s: number): { text: string; cls: string } {
+  if (s >= 75) return { text: 'Excellent',  cls: 'text-blue-600' }
+  if (s >= 50) return { text: 'Good',       cls: 'text-amber-600' }
+  if (s >= 25) return { text: 'Needs Work', cls: 'text-orange-600' }
+  return             { text: 'Critical',    cls: 'text-red-600' }
+}
+
+function scoreBarColor(s: number): string {
+  if (s >= 75) return 'bg-blue-500'
+  if (s >= 50) return 'bg-amber-400'
+  if (s >= 25) return 'bg-orange-400'
   return 'bg-red-500'
 }
 
-function computePillars(sr: ScoreResults | null, a: Record<string, unknown>): { protect: number; grow: number; legacy: number } {
-  if (!sr) return { protect: 0, grow: 0, legacy: 0 }
-  const protect = clamp((sr.sub_scores.insurance + sr.sub_scores.estate) / 2)
-  const grow    = clamp((sr.sub_scores.investments + sr.sub_scores.retirement + sr.sub_scores.cashflow + sr.sub_scores.tax) / 4)
-  const legacy  = clamp(sr.sub_scores.estate)
-  void a
-  return { protect, grow, legacy }
-}
+// ── hasClientSummary guard ────────────────────────────────────────────────────
 
-function getProtectFindings(a: Record<string, unknown>): string[] {
-  const f: string[] = []
-  if (a.hasLifeInsurance !== 'yes')                                      f.push('No life insurance detected')
-  if (a.hasDisabilityInsurance !== 'yes' && a.hasDisabilityInsurance !== 'employer') f.push('No disability insurance coverage')
-  if (!a.hasHealthInsurance || a.hasHealthInsurance === 'none')          f.push('No health insurance coverage')
-  if (a.hasLongTermCare !== 'yes')                                       f.push('No long-term care insurance')
-  if (a.hasWill !== 'yes')                                               f.push('No current will on file')
-  if (a.hasPOA !== 'yes')                                                f.push('No power of attorney in place')
-  if (a.hasHealthcareDirective !== 'yes')                                f.push('No healthcare directive')
-  return f.length ? f.slice(0, 3) : ['Life insurance coverage in place', 'Core protection documents present', 'Review coverage limits annually']
-}
-
-function getGrowFindings(a: Record<string, unknown>): string[] {
-  const f: string[] = []
-  if (a.maxing401k === 'no')                                             f.push('Not maximizing 401(k) contributions')
-  const accounts = (a.retirementAccounts as string[]) ?? []
-  if (!accounts.includes('roth_ira') && !accounts.includes('roth401k')) f.push('No Roth account detected')
-  if (n(a.currentRetirementSavings) === 0)                               f.push('No current retirement savings')
-  if (a.hasbudget !== 'yes')                                             f.push('No formal monthly budget in place')
-  const bracket = parseInt(String(a.taxBracket ?? '0'))
-  if (bracket >= 22 && a.taxLossHarvesting !== 'yes')                    f.push('Tax-loss harvesting opportunity identified')
-  return f.length ? f.slice(0, 3) : ['Retirement savings on track', 'Active investment strategy in place', 'Review allocation annually with advisor']
-}
-
-function getLegacyFindings(a: Record<string, unknown>): string[] {
-  const f: string[] = []
-  if (a.hasTrust !== 'yes')                                              f.push('No living trust established')
-  if (a.hasBeneficiaries !== 'yes')                                     f.push('Beneficiary designations may be outdated')
-  const estateVal    = n(a.estateValue)
-  const lifeCoverage = n(a.lifeCoverageAmount)
-  if (estateVal > 500_000 && lifeCoverage < estateVal * 0.5)            f.push('Estate value may exceed life insurance coverage')
-  if (a.lastReviewedEstate === 'never' || a.lastReviewedEstate === '5yr+') f.push('Estate plan not reviewed recently')
-  if (a.hasEstateAttorney !== 'yes')                                    f.push('No estate attorney on file')
-  return f.length ? f.slice(0, 3) : ['Core estate documents present', 'Review beneficiary designations annually', 'Consider trust as estate grows']
-}
-
-function getProductRecs(a: Record<string, unknown>): ProductRec[] {
-  const recs: ProductRec[] = []
-  if (a.hasLifeInsurance !== 'yes')
-    recs.push({ icon: '🛡️', title: 'Term Life Insurance or IUL', explanation: "Protect your family's financial future and replace lost income with cost-effective coverage.", priority: 'High' })
-  if (a.maxing401k === 'no')
-    recs.push({ icon: '📈', title: 'Maximize 401(k) Contributions', explanation: 'Reduce taxable income now and accelerate tax-deferred compound growth for retirement.', priority: 'High' })
-  const accounts = (a.retirementAccounts as string[]) ?? []
-  if (!accounts.includes('roth_ira') && !accounts.includes('roth401k'))
-    recs.push({ icon: '🏦', title: 'Open a Roth IRA', explanation: 'Build tax-free retirement income — contributions grow and are withdrawn completely tax-free.', priority: 'High' })
-  const risk    = a.riskTolerance as string
-  const horizon = a.investmentHorizon as string
-  if ((risk === 'conservative' || risk === 'moderate') && (horizon === '10-20' || horizon === '20+'))
-    recs.push({ icon: '📊', title: 'Fixed Indexed Annuity (FIA)', explanation: 'Participate in market growth with principal protection — ideal for conservative long-term investors.', priority: 'Medium' })
-  if (risk === 'conservative' && (horizon === '5-10' || horizon === '10-20' || horizon === '20+'))
-    recs.push({ icon: '⚖️', title: 'Portfolio Rebalancing Toward Growth', explanation: 'Your long time horizon supports a more growth-oriented allocation to maximize long-term returns.', priority: 'Medium' })
-  if (a.hasDisabilityInsurance !== 'yes' && a.hasDisabilityInsurance !== 'employer')
-    recs.push({ icon: '🏥', title: 'Own-Occupation Disability Insurance', explanation: "Replace 60–70% of your income if you're unable to work in your specific occupation.", priority: 'High' })
-  if (a.hasTrust !== 'yes' && n(a.estateValue) > 500_000)
-    recs.push({ icon: '📋', title: 'Revocable Living Trust', explanation: 'Avoid costly probate and ensure your assets pass directly and privately to your beneficiaries.', priority: 'Medium' })
-  return recs
-}
-
-function overallParagraph(firstName: string, overall: number, pillars: { protect: number; grow: number; legacy: number }, riskProfile: string): string {
-  const protect = pillars.protect >= 80 ? 'strong protection coverage' : pillars.protect >= 50 ? 'partial protection coverage' : 'significant protection gaps'
-  const grow    = pillars.grow >= 80 ? 'a solid growth trajectory' : pillars.grow >= 50 ? 'moderate growth progress' : 'meaningful growth opportunities to capture'
-  const legacy  = pillars.legacy >= 80 ? 'a comprehensive legacy plan' : pillars.legacy >= 50 ? 'a partial legacy framework' : 'legacy planning gaps that need attention'
-  const overall_str = overall >= 75 ? 'a strong overall foundation with targeted improvements available' : overall >= 50 ? 'a solid foundation with important gaps to address' : 'meaningful opportunities to strengthen your financial position across all areas'
-  const risk    = riskProfile.replace('_', ' ')
-  return `${firstName}'s financial assessment reveals ${overall_str}, with an overall score of ${overall}/100. The results show ${protect}, ${grow}, and ${legacy}. As a ${risk} investor, the recommendations below have been tailored to your risk profile and timeline. A WealthPlanrAI advisor will contact you within 1 business day to walk through a prioritized action plan.`
-}
-
-function topPriorityActions(sr: ScoreResults | null): { num: number; text: string }[] {
-  if (!sr?.recommendations) return []
-  const sorted = [...sr.recommendations].sort((a, b) => {
-    const ord: Record<string, number> = { high: 0, medium: 1, low: 2 }
-    return (ord[a.priority] ?? 2) - (ord[b.priority] ?? 2)
-  })
-  return sorted.slice(0, 3).map((r, i) => ({ num: i + 1, text: r.message }))
-}
-
-const PRIORITY_BADGE: Record<string, string> = {
-  High:   'bg-red-100 text-red-700 border border-red-200',
-  Medium: 'bg-amber-100 text-amber-700 border border-amber-200',
-  Low:    'bg-slate-100 text-slate-600 border border-slate-200',
-}
-
-const DISCLAIMER = `This financial assessment summary is prepared by WealthPlanrAI LLC and is for informational and educational purposes only. It does not constitute investment advice, insurance advice, legal advice, or tax advice. The information provided is based solely on self-reported data and has not been independently verified. Past performance is not indicative of future results. All investment strategies involve risk, including possible loss of principal. Insurance products and annuities involve risks and limitations — please read all product materials carefully before purchasing. Fixed Indexed Annuities (FIAs) and Indexed Universal Life (IUL) policies are insurance products, not securities, and are not FDIC insured. Securities, when applicable, are offered through registered broker-dealers and are subject to FINRA and SEC regulations. WealthPlanrAI advisors may be licensed insurance agents and/or registered investment advisors. This summary does not establish an advisor-client relationship. Please consult with a licensed financial advisor, attorney, and tax professional before making any financial decisions. WealthPlanrAI LLC is not responsible for actions taken based on this summary without professional consultation.`
-
-// ── Score illustration ────────────────────────────────────────────────────────
-
-function ScoreIllustration({ score }: { score: number }) {
-  if (score >= 75) {
-    return (
-      <div className="flex justify-center mb-4">
-        <svg width="120" height="60" viewBox="0 0 120 60">
-          <text x="10" y="30" fontSize="20">⭐</text>
-          <text x="45" y="20" fontSize="28">🏆</text>
-          <text x="85" y="30" fontSize="20">⭐</text>
-          <circle cx="30" cy="10" r="3" fill="#FCD34D" opacity="0.6"/>
-          <circle cx="90" cy="10" r="3" fill="#FCD34D" opacity="0.6"/>
-          <circle cx="20" cy="45" r="2" fill="#60A5FA" opacity="0.5"/>
-          <circle cx="100" cy="45" r="2" fill="#60A5FA" opacity="0.5"/>
-        </svg>
-      </div>
-    )
-  }
-  if (score >= 50) {
-    return (
-      <div className="flex justify-center mb-4">
-        <svg width="120" height="60" viewBox="0 0 120 60">
-          <text x="45" y="40" fontSize="36">📊</text>
-          <circle cx="25" cy="20" r="4" fill="#60A5FA" opacity="0.4"/>
-          <circle cx="95" cy="20" r="4" fill="#60A5FA" opacity="0.4"/>
-        </svg>
-      </div>
-    )
-  }
+function hasClientSummary(
+  row: AssessmentRow,
+): row is AssessmentRow & { client_summary: ClientEducationalSummary } {
   return (
-    <div className="flex justify-center mb-4">
-      <svg width="120" height="60" viewBox="0 0 120 60">
-        <text x="45" y="40" fontSize="36">🎯</text>
-        <circle cx="25" cy="20" r="4" fill="#FCA5A5" opacity="0.4"/>
-        <circle cx="95" cy="20" r="4" fill="#FCA5A5" opacity="0.4"/>
+    row.client_summary !== null &&
+    typeof row.client_summary === 'object' &&
+    Array.isArray((row.client_summary as ClientEducationalSummary).topicsForAdvisorDiscussion)
+  )
+}
+
+// ── Shared sub-components ─────────────────────────────────────────────────────
+
+function PriorityBadge({ priority }: { priority: 'high' | 'medium' | 'low' }) {
+  const cfg = PRIORITY_CONFIG[priority]
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold ${cfg.badge}`}>
+      {cfg.label}
+    </span>
+  )
+}
+
+function Spinner() {
+  return (
+    <div className="flex flex-col items-center justify-center py-32 gap-4">
+      <svg className="w-10 h-10 animate-spin text-brand-300" viewBox="0 0 24 24" fill="none">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
       </svg>
+      <p className="text-sm text-gray-400">Loading your results…</p>
     </div>
   )
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+// ── Legacy sub-components ─────────────────────────────────────────────────────
+
+function SubScoreCard({ name, score }: { name: string; score: number }) {
+  const meta = SUB_META[name] ?? { label: name, icon: '•', explanation: '' }
+  const lbl  = scoreLabel(score)
+  const bar  = scoreBarColor(score)
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex flex-col gap-3">
+      <div className="flex items-center gap-2.5">
+        <span className="text-2xl leading-none">{meta.icon}</span>
+        <span className="text-sm font-semibold text-gray-700">{meta.label}</span>
+      </div>
+      <div className="flex items-end justify-between">
+        <span className="text-3xl font-bold text-gray-900">{score}</span>
+        <span className={`text-xs font-semibold ${lbl.cls}`}>{lbl.text}</span>
+      </div>
+      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+        <div className={`h-full ${bar} rounded-full`} style={{ width: `${score}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function GapCard({ name, score }: { name: string; score: number }) {
+  const meta = SUB_META[name] ?? { label: name, icon: '•', explanation: '' }
+  const lbl  = scoreLabel(score)
+  const bar  = scoreBarColor(score)
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xl leading-none">{meta.icon}</span>
+          <span className="text-sm font-semibold text-gray-800">{meta.label}</span>
+        </div>
+        <span className={`text-sm font-bold ${lbl.cls}`}>{score}/100</span>
+      </div>
+      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-3">
+        <div className={`h-full ${bar} rounded-full`} style={{ width: `${score}%` }} />
+      </div>
+      <p className="text-xs text-gray-500 leading-relaxed">{meta.explanation}</p>
+    </div>
+  )
+}
+
+// ── Legacy view (for assessments submitted before the D1 engine) ──────────────
+
+function LegacySummaryContent({ row }: { row: AssessmentRow }) {
+  const sr        = row.score_results
+  const overall   = sr?.overall_score ?? row.score
+  const ring      = scoreColor(overall)
+  const riskLabel = RISK_LABELS[row.risk_profile as RiskProfile] ?? row.risk_profile
+  const badgeCls  = RISK_BADGE[row.risk_profile] ?? 'bg-gray-100 text-gray-600 border border-gray-200'
+  const dateStr   = formatDate(row.created_at)
+
+  const subEntries = sr ? (Object.entries(sr.sub_scores) as [string, number][]) : []
+  const gaps       = [...subEntries].sort((a, b) => a[1] - b[1]).slice(0, 3)
+
+  const grouped: Record<'high' | 'medium' | 'low', Recommendation[]> = { high: [], medium: [], low: [] }
+  if (sr?.recommendations) {
+    for (const rec of sr.recommendations) grouped[rec.priority]?.push(rec)
+  }
+  const hasRecs = grouped.high.length + grouped.medium.length + grouped.low.length > 0
+
+  return (
+    <div className="space-y-6">
+
+      <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-8 border border-blue-200">
+        <div className="flex items-center justify-between mb-8 flex-wrap gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-white/70 border border-blue-200 flex items-center justify-center">
+              <User className="w-4 h-4 text-blue-500" />
+            </div>
+            <span className="text-base font-semibold text-gray-900">{row.full_name ?? 'Your Assessment'}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-gray-500 text-xs">
+            <Calendar className="w-3.5 h-3.5" /><span>{dateStr}</span>
+          </div>
+        </div>
+
+        <ScoreRing score={overall} color={ring} />
+
+        <div className="mt-6 flex flex-col items-center gap-3">
+          <p className="text-sm font-medium text-gray-600 tracking-wide">Financial Health Score</p>
+          <span className={`text-xs font-semibold px-3 py-1 rounded-full ${badgeCls}`}>{riskLabel}</span>
+          <p className="text-xs text-gray-500 text-center max-w-xs">Based on your complete financial assessment</p>
+        </div>
+      </div>
+
+      {subEntries.length > 0 && (
+        <section>
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3 px-1">Category scores</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {subEntries.map(([name, score]) => <SubScoreCard key={name} name={name} score={score} />)}
+          </div>
+        </section>
+      )}
+
+      {sr && sr.risk_flags.length > 0 && (
+        <section>
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3 px-1">Areas needing attention</h2>
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl overflow-hidden shadow-sm">
+            {sr.risk_flags.map((flag, i) => (
+              <div key={i} className={`flex items-start gap-3 px-5 py-3.5 ${i < sr.risk_flags.length - 1 ? 'border-b border-amber-100' : ''}`}>
+                <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                <p className="text-sm text-amber-900 leading-snug">{flag}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {gaps.length > 0 && (
+        <section>
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3 px-1">Top financial gaps</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {gaps.map(([name, score]) => <GapCard key={name} name={name} score={score} />)}
+          </div>
+        </section>
+      )}
+
+      {hasRecs && (
+        <section>
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3 px-1">Recommended actions</h2>
+          <div className="space-y-3">
+            {(['high', 'medium', 'low'] as const).map(priority => {
+              const recs = grouped[priority]
+              if (!recs.length) return null
+              const cfg = PRIORITY_CONFIG[priority]
+              return (
+                <div key={priority} className={`border ${cfg.border} rounded-2xl overflow-hidden shadow-sm`}>
+                  <div className={`px-4 py-2.5 ${cfg.header} border-b ${cfg.border}`}>
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-gray-500">{cfg.label} priority</span>
+                  </div>
+                  <div className="bg-white divide-y divide-gray-100">
+                    {recs.map((rec, i) => (
+                      <div key={i} className="flex items-start gap-4 px-4 py-3.5">
+                        <PriorityBadge priority={priority} />
+                        <div className="min-w-0">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-0.5">{rec.category}</span>
+                          <p className="text-sm text-gray-700 leading-snug">{rec.message}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
+      <AdvisorSelector assessmentId={row.id} />
+
+      <section className="bg-brand-600 rounded-2xl p-8 text-center">
+        <h2 className="font-heading text-2xl font-bold text-white mb-2">Ready to build your personalized plan?</h2>
+        <p className="text-brand-100 text-sm mb-6 max-w-md mx-auto">
+          A WealthPlanrAI advisor will review your results and contact you within 1 business day.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <Link
+            href="/"
+            className="inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-white hover:bg-brand-50 transition-colors text-brand-700 font-semibold text-sm rounded-xl"
+          >
+            Return to Home <ArrowRight className="w-4 h-4" />
+          </Link>
+          <DownloadButton assessmentId={row.id} />
+        </div>
+        <p className="text-[11px] text-brand-200 mt-4">
+          WealthPlanrAI is an educational platform. Advisors are independently licensed.
+        </p>
+      </section>
+
+      <div className="flex justify-center pb-2">
+        <Link href="/assessment" className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+          <RefreshCw className="w-3.5 h-3.5" /> Retake assessment
+        </Link>
+      </div>
+
+      <p className="text-[11px] text-gray-400 leading-relaxed text-center pb-4">
+        This assessment is for informational purposes only and does not constitute financial, investment,
+        tax, or legal advice. Past performance is not indicative of future results. Please consult a
+        licensed financial advisor before making financial decisions.
+      </p>
+
+    </div>
+  )
+}
+
+// ── New educational view (post-submission client variant) ─────────────────────
+
+function EducationalSummaryContent({
+  row,
+  cs,
+}: {
+  row: AssessmentRow
+  cs: ClientEducationalSummary
+}) {
+  const overall = cs.overallEducationalScore
+  const ring    = scoreColor(overall)
+  const dateStr = formatDate(row.created_at)
+
+  return (
+    <div className="space-y-6">
+
+      {/* Section 0 — Watermark banner */}
+      <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl px-4 py-2.5 text-xs font-semibold uppercase tracking-widest flex items-center gap-2">
+        <Info className="w-4 h-4 shrink-0" />
+        {cs.watermark}
+      </div>
+
+      {/* Section 1 — Hero */}
+      <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-8 border border-blue-200">
+        <div className="flex items-center justify-between mb-8 flex-wrap gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-white/70 border border-blue-200 flex items-center justify-center">
+              <User className="w-4 h-4 text-blue-500" />
+            </div>
+            <span className="text-base font-semibold text-gray-900">{row.full_name ?? 'Your Assessment'}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-gray-500 text-xs">
+            <Calendar className="w-3.5 h-3.5" /><span>{dateStr}</span>
+          </div>
+        </div>
+
+        <ScoreRing score={overall} color={ring} />
+
+        <div className="mt-6 flex flex-col items-center gap-2 text-center">
+          <p className="text-sm font-semibold text-gray-700 tracking-wide">Educational Reference Score</p>
+          <p className="text-sm text-gray-600 leading-relaxed max-w-sm">{cs.overallScoreNarrative}</p>
+          <p className="text-[11px] text-gray-400 italic max-w-xs leading-relaxed mt-1">{cs.scoreDisclaimer}</p>
+        </div>
+      </div>
+
+      {/* Section 2 — Six area summaries */}
+      {cs.areaSummaries.length > 0 && (
+        <section>
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3 px-1">
+            Planning area overview
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {cs.areaSummaries.map(area => {
+              const band = BAND_CONFIG[area.qualitativeBand] ?? BAND_CONFIG['developing']
+              const bar  = scoreBarColor(area.score)
+              return (
+                <div key={area.area} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex flex-col gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-2xl leading-none">{AREA_ICON[area.area] ?? '•'}</span>
+                    <span className="text-sm font-semibold text-gray-700">{area.label}</span>
+                  </div>
+                  <div className="flex items-end justify-between">
+                    <span className="text-3xl font-bold text-gray-900">{area.score}</span>
+                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${band.pill}`}>
+                      {area.qualitativeBand}
+                    </span>
+                  </div>
+                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className={`h-full ${bar} rounded-full`} style={{ width: `${area.score}%` }} />
+                  </div>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">{area.educationalNote}</p>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Section 3 — Topics for Advisor Discussion */}
+      {cs.topicsForAdvisorDiscussion.length > 0 && (
+        <section>
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1 px-1">
+            Topics to discuss with your advisor
+          </h2>
+          <p className="text-xs text-gray-500 mb-3 px-1">
+            Educational planning topics flagged from your responses.
+          </p>
+          <div className="space-y-3">
+            {cs.topicsForAdvisorDiscussion.map((topic, i) => {
+              const pcfg = PRIORITY_CONFIG[topic.priorityForDiscussion]
+              return (
+                <div key={i} className={`bg-white rounded-2xl border ${pcfg.border} shadow-sm overflow-hidden`}>
+                  <div className={`px-5 py-3 ${pcfg.header} border-b ${pcfg.border} flex items-center gap-2 flex-wrap`}>
+                    <PriorityBadge priority={topic.priorityForDiscussion} />
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                      {topic.area.replace('_', ' ')}
+                    </span>
+                  </div>
+                  <div className="px-5 py-4 space-y-3">
+                    <h3 className="text-base font-semibold text-gray-900">{topic.title}</h3>
+                    <p className="text-sm text-gray-700 leading-relaxed">{topic.educationalSummary}</p>
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 mb-1">Why it matters</p>
+                      <p className="text-sm text-gray-600 leading-relaxed">{topic.whyItMatters}</p>
+                    </div>
+                    <div className="border-l-4 border-brand-200 pl-3">
+                      <p className="text-xs font-semibold text-gray-500 mb-1">What to discuss with your advisor</p>
+                      <p className="text-sm text-gray-700 leading-relaxed">{topic.whatToDiscussWithAdvisor}</p>
+                    </div>
+                    {topic.educationalFacts && topic.educationalFacts.length > 0 && (
+                      <div className="space-y-2 pt-1">
+                        {topic.educationalFacts.map((fact, fi) => (
+                          <div key={fi} className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5">
+                            <div className="flex items-baseline justify-between gap-2 mb-1">
+                              <span className="text-xs font-semibold text-gray-600">{fact.label}</span>
+                              <span className="text-sm font-bold text-gray-900">{fact.value}</span>
+                            </div>
+                            <p className="text-[11px] text-gray-400 italic leading-relaxed">{fact.educationalContext}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Section 4 — Goal Summaries */}
+      {cs.goalEducationalSummaries.length > 0 && (
+        <section>
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3 px-1">
+            Goal summaries
+          </h2>
+          <div className="space-y-3">
+            {cs.goalEducationalSummaries.map((goal, i) => {
+              const statusCls = GOAL_STATUS_CLS[goal.educationalStatus] ?? 'bg-slate-100 text-slate-600'
+              return (
+                <div key={i} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+                  <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">{goal.goalLabel}</p>
+                      <p className="text-xs text-gray-500">
+                        {goal.goalYear} · {goal.yearsAway} year{goal.yearsAway !== 1 ? 's' : ''} away
+                      </p>
+                    </div>
+                    <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${statusCls}`}>
+                      {goal.educationalStatus}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 leading-relaxed mb-2">{goal.educationalNotes}</p>
+                  {goal.approximateGap && (
+                    <div className="bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-2">
+                      <div className="flex items-baseline justify-between gap-2 mb-0.5">
+                        <span className="text-xs font-semibold text-amber-800">{goal.approximateGap.label}</span>
+                        <span className="text-sm font-bold text-amber-900">{goal.approximateGap.value}</span>
+                      </div>
+                      <p className="text-[11px] text-amber-700 italic leading-relaxed">
+                        {goal.approximateGap.educationalContext}
+                      </p>
+                    </div>
+                  )}
+                  <div className="border-l-4 border-brand-200 pl-3">
+                    <p className="text-xs font-semibold text-gray-500 mb-0.5">Topic for advisor</p>
+                    <p className="text-xs text-gray-700 leading-relaxed">{goal.topicForAdvisor}</p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Section 5 — Investment Framework Reference */}
+      <section>
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3 px-1">
+          Investment framework reference
+        </h2>
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+          <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+            <div>
+              <p className="text-sm font-semibold text-gray-700 mb-0.5">Investment Framework Reference</p>
+              <p className="text-xs text-gray-400 italic">Educational only — not a recommendation</p>
+            </div>
+            <span className="text-xs font-semibold bg-brand-50 text-brand-700 border border-brand-200 px-3 py-1 rounded-full">
+              {cs.investmentFrameworkReference.educationalProfile}
+            </span>
+          </div>
+          <p className="text-sm text-gray-700 leading-relaxed mb-3">
+            {cs.investmentFrameworkReference.profileExplanation}
+          </p>
+          <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-3">
+            <p className="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">
+              Illustrative allocation range
+            </p>
+            <p className="text-sm text-gray-800 font-mono leading-relaxed">
+              {cs.investmentFrameworkReference.illustrativeAllocationRange}
+            </p>
+          </div>
+          <p className="text-[11px] text-gray-400 italic leading-relaxed">
+            {cs.investmentFrameworkReference.disclaimer}
+          </p>
+        </div>
+      </section>
+
+      {/* Section 6 — Next Steps */}
+      {cs.nextStepsEducational.length > 0 && (
+        <section>
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3 px-1">Next steps</h2>
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+            <ol className="space-y-3">
+              {cs.nextStepsEducational.map((step, i) => (
+                <li key={i} className="flex items-start gap-3">
+                  <span className="w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+                    {i + 1}
+                  </span>
+                  <p className="text-sm text-gray-700 leading-relaxed">{step}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
+      )}
+
+      {/* Section X — Download Summary PDF */}
+      <section>
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3 px-1">
+          Download your summary
+        </h2>
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-gray-900 mb-1">Download Your Educational Summary</p>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Save your educational summary as a PDF to share with a licensed financial professional.
+            </p>
+          </div>
+          <DownloadButton assessmentId={row.id} />
+        </div>
+      </section>
+
+      {/* Section Y — Choose Your Advisor */}
+      <section>
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1 px-1">
+          Connect with a licensed advisor
+        </h2>
+        <p className="text-xs text-gray-500 mb-3 px-1">
+          Select a preferred advisor or let us assign the best match for you. Advisors on our network are independently licensed.
+        </p>
+        <AdvisorSelector assessmentId={row.id} />
+      </section>
+
+      {/* Section 7 — CTA */}
+      <section className="bg-brand-600 rounded-2xl p-8 text-center">
+        <h2 className="font-heading text-2xl font-bold text-white mb-2">Ready to talk to an advisor?</h2>
+        <p className="text-brand-100 text-sm mb-6 max-w-md mx-auto">
+          Schedule a free 30-minute conversation with a licensed financial advisor to discuss the topics in this educational summary.
+        </p>
+        <Link
+          href="/schedule"
+          className="inline-flex items-center gap-2 px-7 py-3.5 bg-white hover:bg-brand-50 transition-colors text-brand-700 font-semibold text-sm rounded-xl"
+        >
+          Schedule Advisor Conversation <ArrowRight className="w-4 h-4" />
+        </Link>
+        <p className="text-[11px] text-brand-200 mt-4">
+          WealthPlanrAI is an educational platform. Advisors on our network are independently licensed.
+        </p>
+      </section>
+
+      {/* Section 8 — Retake link */}
+      <div className="flex justify-center pb-2">
+        <Link href="/assessment" className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+          <RefreshCw className="w-3.5 h-3.5" /> Retake assessment
+        </Link>
+      </div>
+
+      {/* Section 9 — Full disclaimer footer */}
+      <div className="border-t border-gray-100 pt-4">
+        <p className="text-[11px] text-gray-400 italic leading-relaxed text-center pb-4">
+          {cs.fullDisclaimer}
+        </p>
+      </div>
+
+    </div>
+  )
+}
+
+// ── Summary content (fetches data, dispatches view) ───────────────────────────
+
+async function SummaryContent({ id }: { id: string }) {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('assessments')
+    .select('id, full_name, client_summary, score_results, score, risk_profile, created_at, email, answers, selected_advisor_id')
+    .eq('id', id)
+    .single()
+
+  if (error || !data) {
+    return (
+      <div className="flex flex-col items-center justify-center py-32 gap-6 text-center">
+        <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center">
+          <AlertTriangle className="w-7 h-7 text-red-400" />
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Assessment not found</h2>
+          <p className="text-sm text-gray-500">
+            We couldn&apos;t locate this assessment. It may have expired or the link is invalid.
+          </p>
+        </div>
+        <Link
+          href="/assessment"
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white text-sm font-semibold rounded-xl hover:bg-brand-700 transition-colors"
+        >
+          Retake assessment <ArrowRight className="w-4 h-4" />
+        </Link>
+      </div>
+    )
+  }
+
+  const row = data as AssessmentRow
+
+  return hasClientSummary(row)
+    ? <EducationalSummaryContent row={row} cs={row.client_summary} />
+    : <LegacySummaryContent row={row} />
+}
+
+// ── Page shell ────────────────────────────────────────────────────────────────
 
 export default async function SummaryPage({
   searchParams,
@@ -210,243 +662,33 @@ export default async function SummaryPage({
   const { id } = await searchParams
   if (!id) redirect('/assessment')
 
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('assessments')
-    .select('id, full_name, email, risk_profile, score, score_results, answers, created_at')
-    .eq('id', id)
-    .single()
-
-  if (error || !data) {
-    return (
-      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
-        <div className="text-center p-8">
-          <p className="text-gray-500 mb-4">Assessment not found.</p>
-          <Link href="/assessment" className="text-brand-600 hover:underline text-sm">Take a new assessment</Link>
-        </div>
-      </div>
-    )
-  }
-
-  const row       = data as unknown as AssessmentData
-  const answers   = (row.answers ?? {}) as Record<string, unknown>
-  const sr        = row.score_results
-  const overall   = sr?.overall_score ?? row.score
-  const pillars   = computePillars(sr, answers)
-  const firstName = (row.full_name ?? 'Your').split(' ')[0]
-  const dateStr   = formatDate(row.created_at)
-  const productRecs = getProductRecs(answers)
-  const priorities  = topPriorityActions(sr)
-
-  const pillarCards: PillarData[] = [
-    {
-      key:          'protect',
-      name:         'PROTECT',
-      score:        pillars.protect,
-      statusLabel:  pillarStatus(pillars.protect, ['Fully Protected', 'Partially Protected', 'Needs Protection']),
-      findings:     getProtectFindings(answers),
-      icon:         <Shield className="w-6 h-6 text-blue-600" />,
-      accent:       'text-blue-700',
-      bgAccent:     'bg-blue-100',
-      borderAccent: 'border-l-blue-500',
-    },
-    {
-      key:          'grow',
-      name:         'GROW',
-      score:        pillars.grow,
-      statusLabel:  pillarStatus(pillars.grow, ['Strong Growth', 'Moderate Growth', 'Growth Gap']),
-      findings:     getGrowFindings(answers),
-      icon:         <TrendingUp className="w-6 h-6 text-green-600" />,
-      accent:       'text-green-700',
-      bgAccent:     'bg-green-100',
-      borderAccent: 'border-l-green-500',
-    },
-    {
-      key:          'legacy',
-      name:         'LEAVE A LEGACY',
-      score:        pillars.legacy,
-      statusLabel:  pillarStatus(pillars.legacy, ['Legacy Ready', 'Partial Legacy Plan', 'Legacy Gap']),
-      findings:     getLegacyFindings(answers),
-      icon:         <Heart className="w-6 h-6 text-purple-600" />,
-      accent:       'text-purple-700',
-      bgAccent:     'bg-purple-100',
-      borderAccent: 'border-l-purple-500',
-    },
-  ]
-
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
 
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 h-14 flex items-center justify-between sticky top-0 z-20">
-        <Link href="/" className="flex items-center gap-2">
-          <span className="text-brand-600 text-lg font-bold leading-none">■</span>
-          <span className="text-[15px] text-gray-900 font-semibold">WealthPlanr<span className="text-brand-600">AI</span></span>
+      <header className="bg-white border-b border-gray-200 px-6 h-14 flex items-center justify-between sticky top-0 z-10">
+        <Link href="/" className="flex items-center gap-2 text-[15px] text-gray-900 font-semibold">
+          <span className="text-brand-600 text-lg leading-none">■</span>
+          WealthPlanr<span className="font-bold text-brand-600">AI</span>
         </Link>
-        <span className="text-[11px] text-gray-400 tracking-[1.2px] uppercase">Financial Summary</span>
+        <span className="text-[11px] text-gray-400 tracking-[1.2px] uppercase">Educational Summary</span>
       </header>
 
-      {/* Hero gradient */}
-      <div className="px-4 sm:px-6 py-7 sm:py-10" style={{ background: 'linear-gradient(135deg, #0F172A, #1E3A8A, #2563EB)' }}>
-        <div className="max-w-5xl mx-auto text-center">
-          <ScoreIllustration score={overall} />
-          <p className="text-blue-200 text-xs font-semibold uppercase tracking-widest mb-3">
-            Evaluated against the WealthPlanrAI Three Pillars
-          </p>
-          <h1 className="font-heading text-3xl sm:text-4xl font-bold text-white mb-2">
-            Your Financial Health Summary
-          </h1>
-          <p className="text-sm mb-1" style={{ color: 'rgba(191,219,254,0.7)' }}>
-            {row.full_name ?? 'Assessment'} &nbsp;·&nbsp; {dateStr}
-          </p>
-        </div>
-      </div>
+      <main className="mx-auto max-w-[900px] px-4 py-10">
 
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 space-y-8">
-
-        {/* ── Three Pillars ───────────────────────────────────────────────── */}
-        <section>
-          <h2 className="font-heading text-xs font-bold text-gray-400 uppercase tracking-widest mb-4 px-1">
-            The Three Pillars
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {pillarCards.map(p => (
-              <div key={p.key} className={`bg-white rounded-2xl border border-gray-200 shadow-sm border-l-4 ${p.borderAccent} p-4 sm:p-6 flex flex-col`}>
-                {/* Icon + Name */}
-                <div className={`w-11 h-11 rounded-xl ${p.bgAccent} flex items-center justify-center mb-4`}>
-                  {p.icon}
-                </div>
-                <p className={`font-heading text-sm font-bold tracking-wide mb-1 ${p.accent}`}>{p.name}</p>
-
-                {/* Score */}
-                <div className="flex items-end gap-1 mb-2">
-                  <span className="text-4xl font-bold text-gray-900 leading-none">{p.score}</span>
-                  <span className="text-gray-400 text-sm mb-0.5">/ 100</span>
-                </div>
-
-                {/* Bar */}
-                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-3">
-                  <div className={`h-full ${scoreBarColor(p.score)} rounded-full`} style={{ width: `${p.score}%` }} />
-                </div>
-
-                {/* Status badge */}
-                <span className={`self-start text-xs font-semibold px-2.5 py-1 rounded-full mb-4 ${pillarStatusBadge(p.score)}`}>
-                  {p.statusLabel}
-                </span>
-
-                {/* Findings */}
-                <ul className="space-y-2 flex-1">
-                  {p.findings.map((f, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-gray-600">
-                      {p.score >= 80
-                        ? <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
-                        : <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-                      }
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* ── Overall Summary Card ────────────────────────────────────────── */}
-        <section className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl border border-blue-200 p-4 sm:p-8">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
-            {/* Big score */}
-            <div className="flex-shrink-0 text-center sm:text-left">
-              <p className="text-xs font-semibold text-blue-500 uppercase tracking-widest mb-1">Overall Score</p>
-              <div className="flex items-end gap-1">
-                <span className="text-7xl font-bold text-gray-900 leading-none">{overall}</span>
-                <span className="text-gray-400 text-lg mb-1">/ 100</span>
-              </div>
-              <p className="text-sm font-medium text-blue-600 mt-1 capitalize">{row.risk_profile.replace('_', ' ')} investor profile</p>
-            </div>
-            {/* Summary paragraph */}
-            <div className="flex-1">
-              <p className="text-sm text-gray-700 leading-relaxed">
-                {overallParagraph(firstName, overall, pillars, row.risk_profile)}
-              </p>
-            </div>
-          </div>
-
-          {/* Top 3 priority actions */}
-          {priorities.length > 0 && (
-            <div className="mt-6 pt-6 border-t border-blue-200">
-              <p className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-3">Top Priority Actions</p>
-              <ol className="space-y-2">
-                {priorities.map(p => (
-                  <li key={p.num} className="flex items-start gap-3 text-sm text-gray-700">
-                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-brand-600 text-white text-[11px] font-bold flex items-center justify-center mt-0.5">
-                      {p.num}
-                    </span>
-                    {p.text}
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
-        </section>
-
-        {/* ── Product Recommendations ─────────────────────────────────────── */}
-        {productRecs.length > 0 && (
-          <section>
-            <h2 className="font-heading text-xs font-bold text-gray-400 uppercase tracking-widest mb-4 px-1">
-              Recommended Strategies & Products
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {productRecs.map((rec, i) => (
-                <div key={i} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex items-start gap-4">
-                  <span className="text-2xl leading-none flex-shrink-0 mt-0.5">{rec.icon}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <p className="text-sm font-semibold text-gray-900">{rec.title}</p>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${PRIORITY_BADGE[rec.priority]}`}>
-                        {rec.priority}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-500 leading-relaxed">{rec.explanation}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* ── Advisor Selector ─────────────────────────────────────────────── */}
-        <AdvisorSelector assessmentId={row.id} />
-
-        {/* ── CTA Section ─────────────────────────────────────────────────── */}
-        <section className="bg-brand-600 rounded-2xl p-4 sm:p-8 text-center">
-          <h2 className="font-heading text-2xl font-bold text-white mb-2">
-            Ready to build your personalized financial plan?
-          </h2>
-          <p className="text-brand-100 text-sm mb-6 max-w-md mx-auto">
-            A WealthPlanrAI advisor will review your results and contact you within 1 business day.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Link
-              href="/"
-              className="inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-white hover:bg-brand-50 transition-colors text-brand-700 font-semibold text-sm rounded-xl w-full sm:w-auto"
-            >
-              Return to Home <ArrowRight className="w-4 h-4" />
-            </Link>
-            <DownloadButton assessmentId={row.id} />
-          </div>
-          <p className="text-[11px] text-brand-200 mt-4">
-            No obligation. For licensed financial professionals only.
-          </p>
-        </section>
-
-        {/* ── Disclaimer ──────────────────────────────────────────────────── */}
-        <div className="border border-gray-200 rounded-xl p-5 bg-white">
-          <p className="text-[11px] text-gray-400 leading-relaxed text-center">
-            {DISCLAIMER}
+        <div className="mb-7">
+          <h1 className="font-heading text-2xl font-bold text-gray-900">Your Educational Financial Summary</h1>
+          <p className="text-sm text-gray-600 leading-relaxed mt-2 max-w-2xl">
+            Thanks for completing the assessment. Here&apos;s an educational overview of your financial
+            picture and the topics most worth discussing with a licensed advisor. This is NOT financial
+            advice and does NOT recommend any specific investment, product, or transaction.
           </p>
         </div>
 
-      </div>
+        <Suspense fallback={<Spinner />}>
+          <SummaryContent id={id} />
+        </Suspense>
+
+      </main>
     </div>
   )
 }

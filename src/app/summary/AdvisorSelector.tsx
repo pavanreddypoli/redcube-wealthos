@@ -95,7 +95,7 @@ export function AdvisorSelector({ assessmentId }: { assessmentId: string }) {
       <button
         onClick={handleConnect}
         disabled={loading}
-        className="w-full py-3 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white font-semibold text-sm rounded-xl transition-colors flex items-center justify-center gap-2"
+        className="w-full py-2.5 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white font-semibold text-sm rounded-xl transition-colors flex items-center justify-center gap-2"
       >
         {loading
           ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Connecting…</>
