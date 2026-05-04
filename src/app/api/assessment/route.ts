@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { scoreAssessment } from '@/lib/scoring'
@@ -225,10 +226,30 @@ export async function POST(request: NextRequest) {
 
     const fullName = [answers.firstName, answers.lastName].filter(Boolean).join(' ') || null
 
-    // 1. Insert parent assessment row
+    // Build audit trail before INSERT so it can be written atomically.
+    // A post-INSERT UPDATE is silently blocked by RLS: the UPDATE policy requires
+    // selected_advisor_id/assigned_advisor_id = auth.uid(), but both are NULL on
+    // a fresh row, so Supabase updates 0 rows without raising an error.
+    const assessmentId = randomUUID()
+    let audit_trail = null
+    try {
+      const trail = newAuditTrail({ assessmentId, userId: user?.id })
+      for (const c of (body.intake_consents ?? []) as DisclosureAcknowledgment[]) {
+        trail.consents.push(c)
+        trail.events.push({ type: 'consent', at: c.acknowledgedAt ?? new Date().toISOString(), metadata: { disclosureKey: c.disclosureKey } })
+      }
+      recordEvent(trail, 'assessment_completed')
+      recordEvent(trail, 'report_generated')
+      audit_trail = trail
+    } catch (trailErr) {
+      console.error('[assessment] audit_trail build error:', trailErr)
+    }
+
+    // 1. Insert parent assessment row (audit_trail included atomically)
     const { data: assessment, error: assessmentError } = await supabase
       .from('assessments')
       .insert({
+        id:                     assessmentId,
         user_id:                user?.id ?? null,
         full_name:              fullName,
         email:                  (answers.email as string) || null,
@@ -240,6 +261,7 @@ export async function POST(request: NextRequest) {
         intake_analysis,
         client_summary,
         intake_consents:        body.intake_consents ?? null,
+        audit_trail,
         status:                 'submitted',
       })
       .select('id')
@@ -248,20 +270,6 @@ export async function POST(request: NextRequest) {
     if (assessmentError) {
       console.error('Assessment insert error:', assessmentError)
       throw assessmentError
-    }
-
-    // Build and persist audit trail
-    try {
-      const trail = newAuditTrail({ assessmentId: assessment.id, userId: user?.id })
-      for (const c of (body.intake_consents ?? []) as DisclosureAcknowledgment[]) {
-        trail.consents.push(c)
-        trail.events.push({ type: 'consent', at: c.acknowledgedAt ?? new Date().toISOString(), metadata: { disclosureKey: c.disclosureKey } })
-      }
-      recordEvent(trail, 'assessment_completed')
-      recordEvent(trail, 'report_generated')
-      await supabase.from('assessments').update({ audit_trail: trail }).eq('id', assessment.id)
-    } catch (trailErr) {
-      console.error('[assessment] audit trail error (non-fatal):', trailErr)
     }
 
     // 2. Insert normalized per-section rows into assessment_answers
